@@ -1,0 +1,21 @@
+[Unit]
+Description=Priks messenger server
+After=network.target
+
+[Service]
+Type=simple
+User=priks
+Group=priks
+WorkingDirectory=/opt/priks/server-node
+Environment=PORT=8777
+Environment=HOST=127.0.0.1
+Environment=WEB_DIR=/opt/priks/web
+Environment=DATA_DIR=/var/lib/priks
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
