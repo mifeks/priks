@@ -1,0 +1,13 @@
+{
+  "name": "priks-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Сервер мессенджера Прикс: API и веб-версия, без внешних зависимостей",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
