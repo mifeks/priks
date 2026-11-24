@@ -11,6 +11,11 @@ Environment=PORT=8777
 Environment=HOST=127.0.0.1
 Environment=WEB_DIR=/opt/priks/web
 Environment=DATA_DIR=/var/lib/priks
+Environment=ADMIN_NICKS=admin
+Environment=PUBLIC_URL=https://priks.ru
+Environment=YANDEX_CLIENT_ID=
+Environment=YANDEX_CLIENT_SECRET=
+Environment=CORS_ORIGINS=https://mifeks.github.io
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3
