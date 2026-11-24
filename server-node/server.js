@@ -104,11 +104,29 @@ function isOnline(user) {
   return Date.now() - (user.lastSeen || 0) < ONLINE_WINDOW_MS;
 }
 
+function profileOf(user) {
+  return {
+    nick: user.nick,
+    displayName: user.displayName || user.nick,
+    status: user.status || "on",
+    customStatus: user.customStatus || "",
+    avatar: user.avatar || 1,
+    hideOnline: !!user.hideOnline
+  };
+}
+
 function publicUsers() {
   const out = [];
   for (const key of Object.keys(store.users)) {
     const user = store.users[key];
-    out.push({ nick: user.nick, online: isOnline(user) });
+    out.push({
+      nick: user.nick,
+      displayName: user.displayName || user.nick,
+      avatar: user.avatar || 0,
+      status: user.status || "on",
+      customStatus: user.customStatus || "",
+      online: user.hideOnline ? false : isOnline(user)
+    });
   }
   out.sort((a, b) => a.nick.localeCompare(b.nick));
   return out;
@@ -144,8 +162,15 @@ function handleApi(action, body) {
     const key = nick.toLowerCase();
     if (store.users[key]) return fail("этот ник уже занят");
     const salt = crypto.randomBytes(12).toString("hex");
+    const displayName = String(data.displayName || "").trim().slice(0, 40) || nick;
+    const avatar = parseInt(data.avatar, 10);
     store.users[key] = {
       nick: nick,
+      displayName: displayName,
+      avatar: Number.isFinite(avatar) && avatar >= 1 && avatar <= 6 ? avatar : 1,
+      status: "on",
+      customStatus: "",
+      hideOnline: false,
       salt: salt,
       hash: hashPassword(password, salt),
       created: Date.now(),
@@ -155,7 +180,7 @@ function handleApi(action, body) {
     store.tokens[token] = nick;
     saveStore();
     log("регистрация: " + nick);
-    return { ok: true, nick: nick, token: token };
+    return { ok: true, nick: nick, token: token, profile: profileOf(store.users[key]) };
   }
 
   if (action === "login") {
@@ -169,14 +194,14 @@ function handleApi(action, body) {
     user.lastSeen = Date.now();
     saveStore();
     log("вход: " + user.nick);
-    return { ok: true, nick: user.nick, token: token };
+    return { ok: true, nick: user.nick, token: token, profile: profileOf(user) };
   }
 
   const session = userOf(data.token);
   if (!session) return fail("сессия истекла, войди заново");
 
   if (action === "whoami") {
-    return { ok: true, nick: session.nick };
+    return { ok: true, nick: session.nick, profile: profileOf(session.user) };
   }
 
   if (action === "send") {
@@ -238,6 +263,29 @@ function handleApi(action, body) {
       saveStore();
     }
     return { ok: true, friends: store.friends[session.key] };
+  }
+
+  if (action === "profile") {
+    const user = session.user;
+    if (data.displayName !== undefined) {
+      const name = String(data.displayName || "").trim().slice(0, 40);
+      user.displayName = name || user.nick;
+    }
+    if (data.status !== undefined) {
+      const st = String(data.status || "on");
+      user.status = st === "dnd" || st === "custom" ? st : "on";
+    }
+    if (data.customStatus !== undefined) {
+      user.customStatus = String(data.customStatus || "").trim().slice(0, 60);
+    }
+    if (data.avatar !== undefined) {
+      const av = parseInt(data.avatar, 10);
+      user.avatar = Number.isFinite(av) && av >= 0 && av <= 6 ? av : 0;
+    }
+    if (data.hideOnline !== undefined) user.hideOnline = !!data.hideOnline;
+    saveStore();
+    return { ok: true, profile: profileOf(user) };
+
   }
 
   return fail("неизвестное действие: " + action);
