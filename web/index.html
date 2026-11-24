@@ -12,34 +12,78 @@
 </head>
 <body>
 
-<section id="login" class="login">
-  <div class="login-card">
-    <div class="brand">
-      <div class="brand-tile">П</div>
-      <div>
-        <h1>Прикс</h1>
-        <p class="muted">мессенджер без регистрации</p>
+<section id="onboarding" class="onb">
+  <div class="onb-card">
+    <div class="onb-brand">
+      <span class="brand-tile">П</span>
+      <span class="onb-brand-text">
+        <b>Прикс</b>
+        <small id="onbStep">шаг 1 из 3</small>
+      </span>
+    </div>
+
+    <div class="dots" id="onbDots"><i class="on"></i><i></i><i></i></div>
+
+    <div class="onb-step" id="p1">
+      <h1>Ваш номер</h1>
+      <p class="hint">Нужен только как логин — код не приходит, SMS не отправляем.</p>
+      <label for="phone">Телефон</label>
+      <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 900 000-00-00" maxlength="20">
+      <div class="err" id="phone-err"></div>
+      <button class="btn primary wide" id="phoneNext">Далее</button>
+      <button class="link-btn" id="toLogin">уже есть ник — войти</button>
+    </div>
+
+    <div class="onb-step hidden" id="p2">
+      <h1>Как вас называть?</h1>
+      <p class="hint">Имя видят собеседники, ник — для входа.</p>
+      <label for="f-name">Имя</label>
+      <input id="f-name" maxlength="40" placeholder="Максим">
+      <div class="err" id="name-err"></div>
+      <label for="f-nick">Ник</label>
+      <input id="f-nick" maxlength="20" spellcheck="false" placeholder="maks" autocomplete="username">
+      <div class="err" id="nick-err"></div>
+      <div class="onb-row">
+        <button class="btn ghost" id="backTo1">Назад</button>
+        <button class="btn primary" id="nickNext">Далее</button>
       </div>
     </div>
 
-    <ul class="features">
-      <li>только ник и пароль</li>
-      <li>общий чат и личные сообщения</li>
-      <li>свой сервер на твоей машине</li>
-    </ul>
-
-    <label for="nick">Ник</label>
-    <input id="nick" maxlength="20" autocomplete="username" spellcheck="false" placeholder="maks">
-
-    <label for="password">Пароль</label>
-    <input id="password" type="password" maxlength="64" autocomplete="current-password" placeholder="минимум 4 символа">
-
-    <div class="login-actions">
-      <button id="btnLogin" class="btn primary">Войти</button>
-      <button id="btnRegister" class="btn ghost">Создать ник</button>
+    <div class="onb-step hidden" id="p3">
+      <h1>Последний штрих</h1>
+      <p class="hint">Выберите аватар и придумайте пароль.</p>
+      <div class="avatar-pick" id="avatar-pick">
+        <button class="pick g1" data-av="1" type="button">А</button>
+        <button class="pick g2" data-av="2" type="button">А</button>
+        <button class="pick g3" data-av="3" type="button">А</button>
+        <button class="pick g4" data-av="4" type="button">А</button>
+        <button class="pick g5" data-av="5" type="button">А</button>
+        <button class="pick g6" data-av="6" type="button">А</button>
+      </div>
+      <div class="err" id="user-err"></div>
+      <label for="password">Пароль</label>
+      <input id="password" type="password" maxlength="64" autocomplete="new-password" placeholder="минимум 4 символа">
+      <div class="err" id="pass-err"></div>
+      <div class="onb-row">
+        <button class="btn ghost" id="backTo2">Назад</button>
+        <button class="btn primary" id="finishAuth">Создать ник</button>
+      </div>
     </div>
 
-    <div id="loginError" class="error"></div>
+    <div class="onb-step hidden" id="loginBox">
+      <h1>Вход</h1>
+      <p class="hint">Ник и пароль — больше ничего не нужно.</p>
+      <label for="loginNick">Ник</label>
+      <input id="loginNick" maxlength="20" spellcheck="false" autocomplete="username">
+      <label for="loginPass">Пароль</label>
+      <input id="loginPass" type="password" maxlength="64" autocomplete="current-password">
+      <div class="err" id="loginError"></div>
+      <div class="onb-row">
+        <button class="btn ghost" id="backToStart">Назад</button>
+        <button class="btn primary" id="btnLogin">Войти</button>
+      </div>
+    </div>
+
     <div class="server-note">Сервер: <b id="serverName">—</b></div>
   </div>
 </section>
@@ -68,10 +112,10 @@
 
   <aside class="sidebar">
     <button class="me" id="btnMe">
-      <span class="avatar" id="myAvatar">?</span>
+      <span class="avatar g1" id="myAvatar">?</span>
       <span class="me-text">
         <span class="me-nick" id="myNick">—</span>
-        <span class="me-status" id="myStatus">в сети</span>
+        <span class="me-status" id="myStatus">на связи</span>
       </span>
     </button>
 
@@ -91,7 +135,7 @@
   <main class="chat">
     <header class="chat-head">
       <div class="chat-who">
-        <span class="avatar small" id="chatAvatar">#</span>
+        <span class="avatar small hash" id="chatAvatar">#</span>
         <span class="chat-titles">
           <span class="chat-title" id="chatTitle">Общий чат</span>
           <span class="chat-sub" id="chatSub">все пользователи</span>
@@ -121,7 +165,7 @@
     <header class="sheet-head">
       <div>
         <div class="sheet-title">Настройки</div>
-        <div class="sheet-sub">оформление, чаты и уведомления</div>
+        <div class="sheet-sub">профиль, оформление, приватность</div>
       </div>
       <button class="icon-btn" id="btnCloseSettings" title="Закрыть" aria-label="Закрыть">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
@@ -129,60 +173,126 @@
     </header>
 
     <div class="sheet-body">
-      <section class="group">
-        <div class="group-title">Оформление</div>
-        <div class="seg-row">
-          <div class="seg" id="themeSeg">
-            <button class="seg-btn active" data-theme="light">Светлая</button>
-            <button class="seg-btn" data-theme="dark">Тёмная</button>
+      <section class="card">
+        <div class="profile-row">
+          <span class="avatar lg g1" id="set-av">А</span>
+          <span class="profile-text">
+            <span class="profile-name" id="set-name">Гость</span>
+            <span class="hint" id="set-nick">@username</span>
+            <span class="status-pill" id="set-status"><span class="dot"></span><span>на связи</span></span>
+          </span>
+          <button class="btn ghost small" id="btnEdit">Изменить</button>
+        </div>
+
+        <div id="profile-edit" class="hidden profile-edit">
+          <div class="avatar-pick" id="avatar-pick2">
+            <button class="pick g1" data-av="1" type="button">А</button>
+            <button class="pick g2" data-av="2" type="button">А</button>
+            <button class="pick g3" data-av="3" type="button">А</button>
+            <button class="pick g4" data-av="4" type="button">А</button>
+            <button class="pick g5" data-av="5" type="button">А</button>
+            <button class="pick g6" data-av="6" type="button">А</button>
+            <label class="pick upload" title="Загрузить фото">+<input type="file" accept="image/*" id="avatar-file2"></label>
+          </div>
+          <label for="set-name-in">Имя</label>
+          <input id="set-name-in" maxlength="40">
+          <label for="set-nick-in">Никнейм</label>
+          <input id="set-nick-in" maxlength="20" spellcheck="false" disabled>
+          <div class="hint">ник менять нельзя — это логин</div>
+          <label>Статус</label>
+          <div class="seg" id="status-seg">
+            <button class="seg-btn" data-st="on" type="button">На связи</button>
+            <button class="seg-btn" data-st="dnd" type="button">Не беспокоить</button>
+            <button class="seg-btn" data-st="custom" type="button">Свой…</button>
+          </div>
+          <div class="hidden" id="custom-status-wrap"><input id="set-custom-status" maxlength="60" placeholder="Например: читаю книгу"></div>
+          <div class="err" id="profile-err"></div>
+          <button class="btn primary wide" id="btnSaveProfile">Сохранить</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="group-title">Кастомизация</div>
+
+        <div class="ctl">
+          <div class="ctl-label">Тема</div>
+          <div class="seg" id="theme-seg">
+            <button class="seg-btn" data-v="light" type="button">Светлая</button>
+            <button class="seg-btn" data-v="dark" type="button">Тёмная</button>
+            <button class="seg-btn" data-v="system" type="button">Системная</button>
           </div>
         </div>
-        <div class="group-title small">Акцент</div>
-        <div class="accents" id="accentRow"></div>
-        <div class="slider-row">
-          <span class="muted">Размер текста</span>
-          <input type="range" id="setFontSize" min="14" max="20" step="1">
-          <span class="value" id="fontSizeValue">16</span>
+
+        <div class="ctl">
+          <div class="ctl-label">Акцентный цвет</div>
+          <div class="accents" id="accent-row"></div>
+        </div>
+
+        <div class="ctl">
+          <div class="ctl-label">Шрифт</div>
+          <div class="font-row" id="font-row">
+            <button class="fontcard" data-v="inter" type="button"><b style="font-family:'Inter',sans-serif">Inter</b><small>нейтральный</small></button>
+            <button class="fontcard" data-v="manrope" type="button"><b style="font-family:'Manrope',sans-serif">Manrope</b><small>мягкий</small></button>
+            <button class="fontcard" data-v="playfair" type="button"><b style="font-family:'Playfair Display',serif">Playfair</b><small>заголовки</small></button>
+          </div>
+        </div>
+
+        <div class="ctl">
+          <div class="ctl-label">Размер текста <output id="fs-out">M</output></div>
+          <input type="range" id="fs-range" min="0" max="2" step="1">
+          <div class="hint spread"><span>S</span><span>M</span><span>L</span></div>
+        </div>
+
+        <div class="ctl">
+          <div class="ctl-label">Скругления <output id="rad-out">14 px</output></div>
+          <input type="range" id="rad-range" min="0" max="24" step="1">
+          <div class="hint spread"><span>острые</span><span>мягкие</span></div>
+        </div>
+
+        <div class="row">
+          <div><div class="t">Компактный режим</div><div class="d">Плотнее список чатов</div></div>
+          <label class="switch"><input type="checkbox" id="compact-chk"><span class="track"><span class="knob"></span></span></label>
+        </div>
+
+        <div class="row">
+          <div><div class="t">Enter отправляет</div><div class="d">Иначе — только кнопкой</div></div>
+          <label class="switch"><input type="checkbox" id="enter-chk"><span class="track"><span class="knob"></span></span></label>
         </div>
       </section>
 
-      <section class="group">
-        <div class="group-title">Чаты</div>
-        <label class="switch">
-          <input type="checkbox" id="setEnter">
-          <span class="track"><span class="knob"></span></span>
-          <span class="switch-text">Enter отправляет сообщение</span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="setCompact">
-          <span class="track"><span class="knob"></span></span>
-          <span class="switch-text">Компактный список чатов</span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="setTitle">
-          <span class="track"><span class="knob"></span></span>
-          <span class="switch-text">Показывать непрочитанные в заголовке</span>
-        </label>
+      <section class="accordion" id="acc-privacy">
+        <button class="acc-head" type="button">
+          <span class="t">Приватность</span><span class="arrow">▾</span>
+        </button>
+        <div class="acc-body">
+          <div class="row"><div><div class="t">Скрывать онлайн</div><div class="d">Собеседники не видят статус</div></div><label class="switch"><input type="checkbox" id="pr-hideOnline"><span class="track"><span class="knob"></span></span></label></div>
+          <div class="row"><div><div class="t">Только по приглашению</div><div class="d">Новые чаты — с вашего одобрения</div></div><label class="switch"><input type="checkbox" id="pr-inviteOnly"><span class="track"><span class="knob"></span></span></label></div>
+          <div class="row"><div><div class="t">Исчезающие сообщения</div><div class="d">24 часа после отправки</div></div><label class="switch"><input type="checkbox" id="pr-vanish"><span class="track"><span class="knob"></span></span></label></div>
+        </div>
       </section>
 
-      <section class="group">
-        <div class="group-title">Уведомления</div>
-        <label class="switch">
-          <input type="checkbox" id="setSound">
-          <span class="track"><span class="knob"></span></span>
-          <span class="switch-text">Звук новых сообщений</span>
-        </label>
-        <div class="slider-row">
-          <span class="muted">Громкость</span>
-          <input type="range" id="setVolume" min="0" max="100" step="5">
-          <span class="value" id="volumeValue">60%</span>
+      <section class="accordion" id="acc-notif">
+        <button class="acc-head" type="button">
+          <span class="t">Уведомления</span><span class="arrow">▾</span>
+        </button>
+        <div class="acc-body">
+          <div class="row"><div class="t">Звук</div><label class="switch"><input type="checkbox" id="notif-sound"><span class="track"><span class="knob"></span></span></label></div>
+          <div class="row"><div class="t">Вибрация</div><label class="switch"><input type="checkbox" id="notif-vibe"><span class="track"><span class="knob"></span></span></label></div>
+          <div class="row"><div><div class="t">Превью сообщений</div><div class="d">Текст в уведомлении</div></div><label class="switch"><input type="checkbox" id="notif-preview"><span class="track"><span class="knob"></span></span></label></div>
+          <div class="slider-row">
+            <span class="hint">Громкость</span>
+            <input type="range" id="setVolume" min="0" max="100" step="5">
+            <span class="value" id="volumeValue">60%</span>
+          </div>
+          <button class="btn ghost small" id="btnTestSound" type="button">Проверить звук</button>
         </div>
-        <button class="btn ghost small" id="btnTestSound">Проверить звук</button>
       </section>
+
+      <button class="btn ghost wide" id="reset-btn" type="button">Сбросить настройки</button>
     </div>
 
     <footer class="sheet-foot">
-      <button class="btn ghost small" id="btnReset">Сбросить настройки</button>
+      <span class="hint">Прикс · демо-сборка</span>
       <button class="btn primary" id="btnDone">Готово</button>
     </footer>
   </div>
