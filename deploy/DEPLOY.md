@@ -72,6 +72,10 @@ Environment=PORT=8777
 Environment=HOST=127.0.0.1
 Environment=WEB_DIR=/opt/priks/web
 Environment=DATA_DIR=/var/lib/priks
+Environment=ADMIN_NICKS=admin
+Environment=PUBLIC_URL=https://priks.ru
+Environment=YANDEX_CLIENT_ID=
+Environment=YANDEX_CLIENT_SECRET=
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3
@@ -91,6 +95,90 @@ curl -s localhost:8777/health
 ```
 
 Ответ `{"ok":true,...}` — сервер жив.
+
+### Админ и модерация
+
+`ADMIN_NICKS` — список ников через запятую, которым разрешены `ban`, `unban` и `bans`.
+В примере выше админом сделан ник `admin`: после регистрации этого ника
+в чат-клиенте модерация доступна через API (см. раздел «Модерация» ниже).
+Сменить список — поправить строку `Environment=ADMIN_NICKS=...` и выполнить
+`sudo systemctl restart priks`.
+
+### Вход через Яндекс
+
+Вход по нику и паролю работает всегда. Кнопка «Войти через Яндекс» появляется,
+только если на сервере заданы `YANDEX_CLIENT_ID` и `YANDEX_CLIENT_SECRET`.
+
+1. Открыть https://oauth.yandex.ru/client/new и создать приложение:
+   - платформа — «Веб-сервисы»;
+   - Redirect URI — `https://priks.ru/auth/yandex/callback` (ровно тот же домен,
+     что в `PUBLIC_URL`, без слэша на конце);
+   - доступ — «Яндекс.ID: логин, имя, фамилия, портрет» (минимум `login:email`
+     и `login:info`).
+2. Скопировать из карточки приложения `ClientID` и `Client secret`.
+3. Вписать их в `/etc/systemd/system/priks.service`:
+
+```bash
+sudo sed -i 's|^Environment=YANDEX_CLIENT_ID=.*|Environment=YANDEX_CLIENT_ID=ваш-client-id|' /etc/systemd/system/priks.service
+sudo sed -i 's|^Environment=YANDEX_CLIENT_SECRET=.*|Environment=YANDEX_CLIENT_SECRET=ваш-client-secret|' /etc/systemd/system/priks.service
+sudo sed -i 's|^Environment=PUBLIC_URL=.*|Environment=PUBLIC_URL=https://priks.ru|' /etc/systemd/system/priks.service
+sudo systemctl daemon-reload && sudo systemctl restart priks
+```
+
+4. Проверить: `curl -s localhost:8777/auth/status` → `{"ok":true,"yandex":true}`.
+   `false` — значит переменные не подхватились, смотреть `journalctl -u priks -n 30`.
+
+Как это работает: сервер уводит на oauth.yandex.ru со случайным `state`
+(живёт 10 минут, годится один раз), получает код, меняет его на токен,
+забирает профиль с `login.yandex.ru/info` и ищет аккаунт по `yandexId`.
+Первый вход создаёт ник из яндексового логина (`vasya`), при занятом нике —
+`vasya-2`, `vasya-3`. Второй вход подхватывает тот же аккаунт и выдаёт новый
+токен сессии. Пароль у таких аккаунтов не спрашивается: попытка войти по паролю
+отвечает «этот ник входит через Яндекс». Баны действуют и на Яндекс-вход.
+
+`PUBLIC_URL` нужен, если сервер стоит за nginx: по нему строится `redirect_uri`.
+Если переменная пустая, сервер берёт домен из заголовка `Host` — работает
+только когда клиент ходит на сервер напрямую, без прокси.
+
+### Веб-версия на GitHub Pages
+
+Клиент лежит в репозитории рядом с сайтом и открывается без сервера:
+**https://mifeks.github.io/priks/app/**
+
+Что нужно, чтобы он заработал:
+
+1. В переменных службы указать, каким сайтам разрешено обращаться к API:
+
+```bash
+sudo sed -i 's|^Environment=CORS_ORIGINS=.*|Environment=CORS_ORIGINS=https://mifeks.github.io|' /etc/systemd/system/priks.service
+sudo systemctl daemon-reload && sudo systemctl restart priks
+```
+
+`CORS_ORIGINS` — список источников через запятую (`https://mifeks.github.io,https://priks.ru`).
+Пусто — разрешено всем (`*`), это удобно для тестов, но лучше ограничить.
+Этот же список проверяется при возврате после входа через Яндекс, поэтому
+чужие сайты не смогут получить токен.
+
+2. Открыть https://mifeks.github.io/priks/app/ — клиент спросит адрес сервера,
+   например `https://priks.ru` или `http://89.169.10.20:8777`. Адрес запоминается
+   в браузере. Другой способ — вписать его один раз в `docs/app/config.js`:
+
+```js
+window.PRIKS_API = "https://priks.ru";
+```
+
+3. Вход через Яндекс с веб-версии: клиент уходит на `<сервер>/auth/yandex?return=<адрес клиента>`,
+   сервер запоминает адрес возврата (проверив его по `CORS_ORIGINS`) и после входа
+   возвращает браузер на клиент с токеном в `#auth=…`.
+   Redirect URI в приложении Яндекса остаётся один — `https://priks.ru/auth/yandex/callback`.
+
+**Про HTTPS.** GitHub Pages отдаётся по `https`, а браузер запрещает со страницы
+`https` обращаться к `http` (mixed content). Поэтому либо:
+
+- поставить домен и сертификат на сервер (`certbot`, см. раздел 7) — тогда адрес
+  вида `https://priks.ru` работает отовсюду;
+- либо открывать клиент прямо с сервера: `http://<IP>:8777` — сервер сам раздаёт
+  ту же страницу, и она обращается к своему же адресу.
 
 ## 6. nginx как точка входа
 
@@ -164,10 +252,44 @@ sudo cp /var/lib/priks/store.json /var/lib/priks/backup-$(date +%F).json
 sudo journalctl -u priks -n 100 --no-pager
 ```
 
+## Модерация
+
+Команды выполняются обычным POST-запросом, `token` — токен админского ника:
+
+```bash
+# забанить на 2 часа с причиной
+curl -s -X POST localhost:8777/api/ban \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<ТОКЕН_АДМИНА>","nick":"bob","reason":"спам","hours":2}'
+
+# забанить навсегда
+curl -s -X POST localhost:8777/api/ban \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<ТОКЕН_АДМИНА>","nick":"bob","reason":"спам"}'
+
+# снять бан
+curl -s -X POST localhost:8777/api/unban \
+  -H 'Content-Type: application/json' -d '{"token":"<ТОКЕН_АДМИНА>","nick":"bob"}'
+
+# кто забанен
+curl -s -X POST localhost:8777/api/bans \
+  -H 'Content-Type: application/json' -d '{"token":"<ТОКЕН_АДМИНА>"}'
+```
+
+Что происходит при бане:
+
+- все сессии забаненного сразу перестают работать (его выбрасывает на экран входа);
+- войти заново он не может — увидит причину и, если бан временный, время окончания;
+- админа забанить нельзя, забаненного не добавить в друзья;
+- баны лежат в `store.json` в поле `bans` и переживают перезапуск сервера;
+- временный бан снимается сам, как только истечёт срок.
+
 ## Что стоит знать
 
 - Порт 8777 наружу не открывается: снаружи только 80/443 через nginx.
 - Пароли хранятся как SHA256 с солью, токены — случайные строки, живут в `store.json`.
 - Сообщения режутся на 4000 символов, в хранилище держится последние 20 000.
+- Анти-флуд: не чаще одного сообщения в 0,7 с и не больше 12 сообщений за 20 секунд.
+  Счётчик живёт в памяти и сбрасывается при перезапуске.
 - Один сервер спокойно держит несколько сотен человек: клиент опрашивает `/api/poll`
   раз в секунду, без WebSocket.
