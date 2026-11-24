@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Прикс — мессенджер</title>
+<meta name="description" content="Прикс — мессенджер без регистрации: только ник и пароль, общий чат и личные сообщения.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section id="login" class="login">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-tile">П</div>
+      <div>
+        <h1>Прикс</h1>
+        <p class="muted">мессенджер без регистрации</p>
+      </div>
+    </div>
+
+    <ul class="features">
+      <li>только ник и пароль</li>
+      <li>общий чат и личные сообщения</li>
+      <li>свой сервер на твоей машине</li>
+    </ul>
+
+    <label for="nick">Ник</label>
+    <input id="nick" maxlength="20" autocomplete="username" spellcheck="false" placeholder="maks">
+
+    <label for="password">Пароль</label>
+    <input id="password" type="password" maxlength="64" autocomplete="current-password" placeholder="минимум 4 символа">
+
+    <div class="login-actions">
+      <button id="btnLogin" class="btn primary">Войти</button>
+      <button id="btnRegister" class="btn ghost">Создать ник</button>
+    </div>
+
+    <div id="loginError" class="error"></div>
+    <div class="server-note">Сервер: <b id="serverName">—</b></div>
+  </div>
+</section>
+
+<section id="app" class="app hidden">
+  <nav class="rail">
+    <div class="rail-logo">П</div>
+    <button class="rail-btn active" id="railChats" title="Чаты" aria-label="Чаты">
+      <svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg>
+    </button>
+    <button class="rail-btn" id="railContacts" title="Контакты" aria-label="Контакты">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>
+    </button>
+    <div class="rail-sep"></div>
+    <button class="rail-btn" id="railSettings" title="Настройки" aria-label="Настройки">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>
+    </button>
+    <button class="rail-btn" id="railTheme" title="Сменить тему" aria-label="Сменить тему">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16"/></svg>
+    </button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn danger" id="railLogout" title="Выйти" aria-label="Выйти">
+      <svg viewBox="0 0 24 24"><path d="M15 5H6v14h9M14 12h7m-3-3 3 3-3 3"/></svg>
+    </button>
+  </nav>
+
+  <aside class="sidebar">
+    <button class="me" id="btnMe">
+      <span class="avatar" id="myAvatar">?</span>
+      <span class="me-text">
+        <span class="me-nick" id="myNick">—</span>
+        <span class="me-status" id="myStatus">в сети</span>
+      </span>
+    </button>
+
+    <div class="search">
+      <input id="search" type="search" placeholder="Поиск по чатам" autocomplete="off">
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" id="tabAll">Все</button>
+      <button class="tab" id="tabFriends">Друзья</button>
+    </div>
+
+    <div class="chat-list" id="chatList"></div>
+    <div class="side-hint" id="sideHint">Пока никого нет</div>
+  </aside>
+
+  <main class="chat">
+    <header class="chat-head">
+      <div class="chat-who">
+        <span class="avatar small" id="chatAvatar">#</span>
+        <span class="chat-titles">
+          <span class="chat-title" id="chatTitle">Общий чат</span>
+          <span class="chat-sub" id="chatSub">все пользователи</span>
+        </span>
+      </div>
+      <div class="chat-tools">
+        <span class="badge" id="connBadge">онлайн</span>
+        <button class="icon-btn" id="btnChatSettings" title="Настройки" aria-label="Настройки">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="messages" id="messages"></div>
+
+    <form class="composer" id="sendForm">
+      <input id="text" maxlength="4000" autocomplete="off" placeholder="Сообщение…">
+      <button class="btn primary send" type="submit" title="Отправить" aria-label="Отправить">
+        <svg viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-6z"/></svg>
+      </button>
+    </form>
+  </main>
+</section>
+
+<div id="settings" class="overlay hidden">
+  <div class="sheet">
+    <header class="sheet-head">
+      <div>
+        <div class="sheet-title">Настройки</div>
+        <div class="sheet-sub">оформление, чаты и уведомления</div>
+      </div>
+      <button class="icon-btn" id="btnCloseSettings" title="Закрыть" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="sheet-body">
+      <section class="group">
+        <div class="group-title">Оформление</div>
+        <div class="seg-row">
+          <div class="seg" id="themeSeg">
+            <button class="seg-btn active" data-theme="light">Светлая</button>
+            <button class="seg-btn" data-theme="dark">Тёмная</button>
+          </div>
+        </div>
+        <div class="group-title small">Акцент</div>
+        <div class="accents" id="accentRow"></div>
+        <div class="slider-row">
+          <span class="muted">Размер текста</span>
+          <input type="range" id="setFontSize" min="14" max="20" step="1">
+          <span class="value" id="fontSizeValue">16</span>
+        </div>
+      </section>
+
+      <section class="group">
+        <div class="group-title">Чаты</div>
+        <label class="switch">
+          <input type="checkbox" id="setEnter">
+          <span class="track"><span class="knob"></span></span>
+          <span class="switch-text">Enter отправляет сообщение</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="setCompact">
+          <span class="track"><span class="knob"></span></span>
+          <span class="switch-text">Компактный список чатов</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="setTitle">
+          <span class="track"><span class="knob"></span></span>
+          <span class="switch-text">Показывать непрочитанные в заголовке</span>
+        </label>
+      </section>
+
+      <section class="group">
+        <div class="group-title">Уведомления</div>
+        <label class="switch">
+          <input type="checkbox" id="setSound">
+          <span class="track"><span class="knob"></span></span>
+          <span class="switch-text">Звук новых сообщений</span>
+        </label>
+        <div class="slider-row">
+          <span class="muted">Громкость</span>
+          <input type="range" id="setVolume" min="0" max="100" step="5">
+          <span class="value" id="volumeValue">60%</span>
+        </div>
+        <button class="btn ghost small" id="btnTestSound">Проверить звук</button>
+      </section>
+    </div>
+
+    <footer class="sheet-foot">
+      <button class="btn ghost small" id="btnReset">Сбросить настройки</button>
+      <button class="btn primary" id="btnDone">Готово</button>
+    </footer>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
