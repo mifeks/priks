@@ -894,7 +894,14 @@
           var text = document.createElement("div");
           var t = document.createElement("div");
           t.className = "t";
-          t.textContent = ch.title + (ch.verified ? " ✓" : "");
+          t.textContent = ch.title;
+          if (ch.verified) {
+            var vt = document.createElement("span");
+            vt.className = "verif";
+            vt.textContent = "✓";
+            vt.title = "канал верифицирован";
+            t.appendChild(vt);
+          }
           var d = document.createElement("div");
           d.className = "d";
           d.textContent = ch.verified ? "проверен" : "не проверен";
@@ -1297,6 +1304,14 @@
     return out;
   }
 
+  function paintChatAvatar(node, photo, letter) {
+    if (!node) return;
+    node.style.backgroundImage = photo ? "url(" + photo + ")" : "";
+    node.style.backgroundSize = photo ? "cover" : "";
+    node.style.backgroundPosition = photo ? "center" : "";
+    node.textContent = photo ? "" : String(letter || "#");
+  }
+
   function avatarNode(entry, cls) {
     var av = document.createElement("span");
     av.className = "avatar small" + (cls ? " " + cls : "");
@@ -1355,7 +1370,7 @@
         chBtn.className = "chat-item" + (state.chat === chKey ? " active" : "");
         var chAv = document.createElement("span");
         chAv.className = "avatar small chan clickable";
-        chAv.textContent = "#";
+        paintChatAvatar(chAv, ch.photo, "#");
         chAv.title = "о канале";
         chAv.onclick = (function (id) {
           return function (ev) {
@@ -1373,7 +1388,8 @@
           var chTick = document.createElement("span");
           chTick.className = "verif";
           chTick.textContent = "✓";
-          chTick.title = "канал проверен";
+          chTick.title = "канал верифицирован";
+          chTick.setAttribute("aria-label", "канал верифицирован");
           chName.appendChild(chTick);
         }
         var chLast = document.createElement("span");
@@ -1411,7 +1427,7 @@
         gBtn.className = "chat-item" + (state.chat === gKey ? " active" : "");
         var gAv = document.createElement("span");
         gAv.className = "avatar small grp clickable";
-        gAv.textContent = gr.title.charAt(0).toUpperCase();
+        paintChatAvatar(gAv, gr.photo, gr.title.charAt(0).toUpperCase());
         gAv.title = "о группе";
         gAv.onclick = (function (id) {
           return function (ev) {
@@ -1535,22 +1551,22 @@
         var tick = document.createElement("span");
         tick.className = "verif";
         tick.textContent = "✓";
+        tick.title = "канал верифицирован";
+        tick.setAttribute("aria-label", "канал верифицирован");
         el.chatTitle.appendChild(tick);
       }
       el.chatSub.textContent = "канал · " + ch.members + " участн.";
       el.chatAvatar.className = "avatar small chan";
-      el.chatAvatar.textContent = "#";
-      el.chatAvatar.style.backgroundImage = "";
       el.chatAvatar.style.color = "";
+      paintChatAvatar(el.chatAvatar, ch.photo, "#");
       return;
     }
     if (gr) {
       el.chatTitle.textContent = gr.title;
       el.chatSub.textContent = "группа · " + gr.members + " участн.";
       el.chatAvatar.className = "avatar small grp";
-      el.chatAvatar.textContent = gr.title.charAt(0).toUpperCase();
-      el.chatAvatar.style.backgroundImage = "";
       el.chatAvatar.style.color = "";
+      paintChatAvatar(el.chatAvatar, gr.photo, gr.title.charAt(0).toUpperCase());
       return;
     }
     el.chatTitle.textContent = nick ? displayOf(nick) : "Общий чат";
@@ -2133,6 +2149,14 @@
     }).catch(function () { toast("нет связи"); });
   }
 
+  function formatPhone(raw) {
+    var d = String(raw || "").replace(/\D/g, "");
+    if (d.length === 11 && d.charAt(0) === "8") d = "7" + d.slice(1);
+    if (d.length === 10) d = "7" + d;
+    if (d.length !== 11) return raw ? "+" + raw : "";
+    return "+" + d.charAt(0) + " " + d.slice(1, 4) + " " + d.slice(4, 7) + "-" + d.slice(7, 9) + "-" + d.slice(9);
+  }
+
   function openPerson(nick) {
     if (!nick) return;
     if (String(nick).toLowerCase() === String(state.nick || "").toLowerCase()) {
@@ -2187,9 +2211,45 @@
 
     var rows = mkNode("div", "info-rows");
     rows.appendChild(infoRow("ник", "@" + u.nick));
-    if (u.phone) rows.appendChild(infoRow("телефон", "+" + u.phone));
+    rows.appendChild(infoRow("телефон", u.phone ? formatPhone(u.phone) : "скрыт настройками"));
     rows.appendChild(infoRow("аватар", u.photo ? "фото профиля" : "цвет " + (u.avatar || 1)));
     body.appendChild(rows);
+  }
+
+  function chatPhotoInput(kind, id) {
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.className = "hidden";
+    input.addEventListener("change", function () {
+      var f = input.files && input.files[0];
+      input.value = "";
+      if (input.parentNode) input.parentNode.removeChild(input);
+      if (f) uploadChatPhoto(kind, id, f);
+    });
+    document.body.appendChild(input);
+    return input;
+  }
+
+  function uploadChatPhoto(kind, id, file) {
+    if (!/^image\//.test(String(file.type || ""))) { toast("это не картинка"); return; }
+    toast("загружаю аватар…");
+    resizeImage(file, 512).then(function (p) {
+      return api("upload", { token: state.token, type: p.type, image: p.data });
+    }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "фото не загрузилось"); return null; }
+      return api(kind === "channel" ? "channel-photo" : "group-photo", { token: state.token, id: id, photo: res.url });
+    }).then(function (res) {
+      if (!res) return;
+      if (!res.ok) { toast((res && res.error) || "аватар не сохранился"); return; }
+      if (res.channels) state.channels = res.channels;
+      if (res.groups) state.groups = res.groups;
+      renderChatList();
+      paintChatHead(state.chat);
+      if (kind === "channel") openChannelInfo("ch:" + id);
+      else openGroupInfo("g:" + id);
+      toast("аватар обновлён");
+    }).catch(function () { toast("не удалось загрузить аватар"); });
   }
 
   function openChannelInfo(target) {
@@ -2199,11 +2259,17 @@
     if (!body) return;
 
     var hero = mkNode("div", "info-hero");
-    var av = mkNode("span", "avatar xl chan", "#");
+    var av = mkNode("span", "avatar xl chan");
+    paintChatAvatar(av, ch.photo, "#");
     hero.appendChild(av);
     var head = mkNode("div", "info-head");
     var name = mkNode("div", "info-name", ch.title);
-    if (ch.verified) name.appendChild(mkNode("span", "verif", "✓"));
+    if (ch.verified) {
+      var badge = mkNode("span", "verif", "✓");
+      badge.title = "канал верифицирован";
+      badge.setAttribute("aria-label", "канал верифицирован");
+      name.appendChild(badge);
+    }
     head.appendChild(name);
     head.appendChild(mkNode("div", "info-nick", "канал · " + ch.members + " участн."));
     head.appendChild(mkNode("div", "info-state", ch.mine ? "твой канал" : ch.joined ? "ты подписан" : "не подписан"));
@@ -2248,6 +2314,28 @@
       acts.appendChild(leave);
     }
 
+    if (ch.mine || (state.me && state.me.admin)) {
+      var avPick = mkNode("button", "btn ghost small", ch.photo ? "Сменить аватар" : "Аватар канала");
+      avPick.type = "button";
+      avPick.onclick = function () { chatPhotoInput("channel", ch.id).click(); };
+      acts.appendChild(avPick);
+      if (ch.photo) {
+        var avClear = mkNode("button", "btn ghost small", "Снять аватар");
+        avClear.type = "button";
+        avClear.onclick = function () {
+          api("channel-photo", { token: state.token, id: ch.id, photo: "" }).then(function (res) {
+            if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+            state.channels = res.channels || state.channels;
+            renderChatList();
+            paintChatHead(state.chat);
+            openChannelInfo("ch:" + ch.id);
+            toast("аватар снят");
+          }).catch(function () { toast("нет связи"); });
+        };
+        acts.appendChild(avClear);
+      }
+    }
+
     if (state.me && (state.me.owner || state.me.admin)) {
       var verify = mkNode("button", "btn ghost small", ch.verified ? "Снять проверку" : "Проверить канал");
       verify.type = "button";
@@ -2278,7 +2366,8 @@
     if (!body) return;
 
     var hero = mkNode("div", "info-hero");
-    var av = mkNode("span", "avatar xl grp", String(gr.title).charAt(0).toUpperCase());
+    var av = mkNode("span", "avatar xl grp");
+    paintChatAvatar(av, gr.photo, String(gr.title).charAt(0).toUpperCase());
     hero.appendChild(av);
     var head = mkNode("div", "info-head");
     head.appendChild(mkNode("div", "info-name", gr.title));
@@ -2305,6 +2394,29 @@
       }).catch(function () { toast("нет связи"); });
     };
     acts.appendChild(leave);
+
+    if (gr.mine || (state.me && state.me.admin)) {
+      var avPick = mkNode("button", "btn ghost small", gr.photo ? "Сменить аватар" : "Аватар группы");
+      avPick.type = "button";
+      avPick.onclick = function () { chatPhotoInput("group", gr.id).click(); };
+      acts.appendChild(avPick);
+      if (gr.photo) {
+        var avClear = mkNode("button", "btn ghost small", "Снять аватар");
+        avClear.type = "button";
+        avClear.onclick = function () {
+          api("group-photo", { token: state.token, id: gr.id, photo: "" }).then(function (res) {
+            if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+            state.groups = res.groups || state.groups;
+            renderChatList();
+            paintChatHead(state.chat);
+            openGroupInfo("g:" + gr.id);
+            toast("аватар снят");
+          }).catch(function () { toast("нет связи"); });
+        };
+        acts.appendChild(avClear);
+      }
+    }
+
     body.appendChild(acts);
 
     var people = gr.people || [];
