@@ -24,6 +24,16 @@
 
     <div class="dots" id="onbDots"><i class="on"></i><i></i><i></i></div>
 
+    <div class="onb-step hidden" id="srvBox">
+      <h1>Адрес сервера</h1>
+      <p class="hint">Куда подключаться? Адрес своего сервера Прикса — клиент его запомнит.</p>
+      <label for="srvAddr">Сервер</label>
+      <input id="srvAddr" spellcheck="false" autocomplete="url" placeholder="http://89.169.0.10:8777">
+      <div class="err" id="srvErr"></div>
+      <button class="btn primary wide" id="srvConnect">Подключиться</button>
+      <button class="link-btn" id="srvLocal">свой компьютер — 127.0.0.1:8777</button>
+    </div>
+
     <div class="onb-step" id="p1">
       <h1>Ваш номер</h1>
       <p class="hint">Нужен только как логин — код не приходит, SMS не отправляем.</p>
@@ -31,6 +41,9 @@
       <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 900 000-00-00" maxlength="20">
       <div class="err" id="phone-err"></div>
       <button class="btn primary wide" id="phoneNext">Далее</button>
+      <button class="btn ghost wide ya-btn hidden" id="yaStart" type="button">
+        <span class="ya-mark">Я</span> Войти через Яндекс
+      </button>
       <button class="link-btn" id="toLogin">уже есть ник — войти</button>
     </div>
 
@@ -82,6 +95,9 @@
         <button class="btn ghost" id="backToStart">Назад</button>
         <button class="btn primary" id="btnLogin">Войти</button>
       </div>
+      <button class="btn ghost wide ya-btn hidden" id="yaLogin" type="button">
+        <span class="ya-mark">Я</span> Войти через Яндекс
+      </button>
     </div>
 
     <div class="server-note">Сервер: <b id="serverName">—</b></div>
@@ -300,6 +316,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
