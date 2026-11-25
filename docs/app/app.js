@@ -53,13 +53,17 @@
     messages: [],
     users: [],
     friends: [],
+    channels: [],
+    found: null,
+    account: null,
     unread: {},
     query: "",
     tab: "all",
     polling: false,
     alive: false,
+    yandexReady: null,
     step: 1,
-    reg: { phone: "", name: "", nick: "", avatar: 1, password: "" },
+    reg: { phone: "", name: "", nick: "", avatar: 1, password: "", email: "" },
     toastTimer: 0
   };
 
@@ -247,11 +251,17 @@
 
   function showStep(step) {
     state.step = step;
-    ["p1", "p2", "p3", "loginBox", "srvBox"].forEach(function (id) { $(id).classList.add("hidden"); });
+    ["p1", "p2", "p3", "loginBox", "srvBox", "resetBox"].forEach(function (id) { $(id).classList.add("hidden"); });
     if (step === "login") {
       $("loginBox").classList.remove("hidden");
       $("onbStep").textContent = "вход";
-      ["", "", ""].forEach(function () { });
+      setDots(0);
+      return;
+    }
+    if (step === "reset") {
+      $("resetBox").classList.remove("hidden");
+      $("onbStep").textContent = "сброс пароля";
+      $("resetStep2").classList.add("hidden");
       setDots(0);
       return;
     }
@@ -308,24 +318,39 @@
 
   function finishAuth() {
     var password = el.password.value;
+    var email = el.regEmail ? el.regEmail.value.trim() : "";
     el.passErr.textContent = "";
     el.userErr.textContent = "";
+    el.emailErr.textContent = "";
     if (password.length < 4) { el.passErr.textContent = "пароль минимум 4 символа"; return; }
+    if (email && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) {
+      el.emailErr.textContent = "почта выглядит странно — нужен вид name@mail.ru";
+      return;
+    }
     state.reg.password = password;
+    state.reg.email = email;
     var payload = {
       nick: state.reg.nick,
       password: password,
       displayName: state.reg.name,
-      avatar: state.reg.avatar
+      avatar: state.reg.avatar,
+      phone: state.reg.phone,
+      email: email
     };
+    el.finishBtn.disabled = true;
     api("register", payload).then(function (res) {
+      el.finishBtn.disabled = false;
       if (!res || !res.ok) { el.userErr.textContent = (res && res.error) || "не получилось"; return; }
       profile.name = state.reg.name;
       profile.avatar = state.reg.avatar;
+      if (res.profile) mergeProfile(res.profile);
       saveProfile();
       enter(res.nick, res.token);
-      toast("ник создан: " + res.nick);
-    }).catch(function () { el.userErr.textContent = "сервер не отвечает"; });
+      toast("аккаунт создан: " + res.nick);
+    }).catch(function () {
+      el.finishBtn.disabled = false;
+      el.userErr.textContent = "сервер не отвечает";
+    });
   }
 
   function doLogin() {
@@ -337,6 +362,56 @@
     }).catch(function () { el.loginError.textContent = "сервер не отвечает"; });
   }
 
+  function resetSend() {
+    var login = el.resetLogin.value.trim();
+    el.resetErr.textContent = "";
+    el.resetErr2.textContent = "";
+    if (!login) { el.resetErr.textContent = "введите ник, телефон или почту"; return; }
+    el.btnResetSend.disabled = true;
+    el.btnResetSend.textContent = "отправляю…";
+    api("password-reset-request", { login: login }).then(function (res) {
+      el.btnResetSend.disabled = false;
+      el.btnResetSend.textContent = "Получить код";
+      if (!res || !res.ok) { el.resetErr.textContent = (res && res.error) || "не получилось"; return; }
+      $("resetStep2").classList.remove("hidden");
+      if (res.sent) {
+        el.resetHint.textContent = "Код отправлен на " + res.email + ". Введите его и новый пароль.";
+      } else {
+        el.resetHint.textContent = "Почта не настроена на сервере, поэтому код показан тут: " + res.code;
+        el.resetCode.value = res.code;
+      }
+      el.resetCode.focus();
+    }).catch(function () {
+      el.btnResetSend.disabled = false;
+      el.btnResetSend.textContent = "Получить код";
+      el.resetErr.textContent = "сервер не отвечает";
+    });
+  }
+
+  function resetApply() {
+    var login = el.resetLogin.value.trim();
+    var code = el.resetCode.value.trim();
+    var password = el.resetPass.value;
+    el.resetErr2.textContent = "";
+    if (!code) { el.resetErr2.textContent = "введите код из письма"; return; }
+    if (password.length < 4) { el.resetErr2.textContent = "пароль минимум 4 символа"; return; }
+    el.btnResetApply.disabled = true;
+    api("password-reset", { login: login, code: code, password: password }).then(function (res) {
+      el.btnResetApply.disabled = false;
+      if (!res || !res.ok) { el.resetErr2.textContent = (res && res.error) || "не получилось"; return; }
+      el.loginNick.value = login;
+      el.loginPass.value = "";
+      el.resetPass.value = "";
+      el.resetCode.value = "";
+      showStep("login");
+      toast("пароль сменён — войдите с новым");
+      el.loginPass.focus();
+    }).catch(function () {
+      el.btnResetApply.disabled = false;
+      el.resetErr2.textContent = "сервер не отвечает";
+    });
+  }
+
   function mergeProfile(p) {
     if (!p) return;
     if (p.displayName) profile.name = p.displayName;
@@ -344,8 +419,34 @@
     if (typeof p.customStatus === "string") profile.custom = p.customStatus;
     if (p.avatar) profile.avatar = p.avatar;
     if (p.hideOnline !== undefined) settings.privacy.hideOnline = !!p.hideOnline;
+    if (p.email !== undefined) {
+      state.account = state.account || {};
+      state.account.email = p.email || "";
+      state.account.emailVerified = !!p.emailVerified;
+      state.account.hasPassword = !!p.hasPassword;
+      state.account.oauth = p.oauth || "";
+      state.account.phone = p.phone || "";
+    }
     saveProfile();
     saveSettings();
+    if (state.alive) syncAccountUi();
+  }
+
+  function syncAccountUi() {
+    var acc = state.account || {};
+    if (el.setEmailState) {
+      if (acc.email && acc.emailVerified) el.setEmailState.textContent = acc.email + " · подтверждена";
+      else if (acc.email) el.setEmailState.textContent = acc.email + " · не подтверждена";
+      else el.setEmailState.textContent = "не привязана — нужна для сброса пароля";
+    }
+    if (el.setPassState) {
+      el.setPassState.textContent = acc.hasPassword ? "задан" : "нет — вход через Яндекс";
+    }
+    if (el.setYaState) {
+      el.setYaState.textContent = acc.oauth === "yandex" ? "привязан" : "не привязан";
+    }
+    if (el.btnEmailEdit) el.btnEmailEdit.textContent = acc.email ? "Изменить" : "Указать";
+    if (el.setEmailIn && !el.setEmailIn.value && acc.email) el.setEmailIn.value = acc.email;
   }
 
   function enter(nick, token) {
@@ -396,6 +497,10 @@
       }
       if (m.id > state.since) state.since = m.id;
     }
+    if (state.messages.length > 600) {
+      state.messages.sort(function (a, b) { return a.id - b.id; });
+      state.messages = state.messages.slice(-600);
+    }
     return added;
   }
 
@@ -404,6 +509,7 @@
       if (!res || !res.ok) { if (res && res.error) backToLogin(res.error); return; }
       addMessages(res.messages || []);
       if (res.users) state.users = res.users;
+      if (res.channels) state.channels = res.channels;
       renderChatList();
       renderMessages();
       updateTitle();
@@ -425,6 +531,7 @@
         state.users = res.users;
         renderChatList();
       }
+      if (res.channels) state.channels = res.channels;
       var added = addMessages(res.messages || []);
       if (added) {
         renderMessages();
@@ -433,7 +540,7 @@
       }
       setConnected(true);
       updateTitle();
-      poll();
+      setTimeout(poll, 900);
     }).catch(function () {
       state.polling = false;
       if (!state.alive) return;
@@ -476,6 +583,23 @@
     return isMine(msg) ? msg.to : msg.from;
   }
 
+  function isChannelTarget(value) {
+    return String(value || "").indexOf("ch:") === 0;
+  }
+
+  function channelOf(id) {
+    var want = String(id || "").replace(/^ch:/, "");
+    for (var i = 0; i < state.channels.length; i++) {
+      if (state.channels[i].id === want) return state.channels[i];
+    }
+    return null;
+  }
+
+  function channelTitle(target) {
+    var ch = channelOf(target);
+    return ch ? ch.title : "Канал";
+  }
+
   function totalUnread() {
     var sum = 0;
     for (var k in state.unread) sum += state.unread[k] || 0;
@@ -497,6 +621,7 @@
     for (var i = 0; i < state.messages.length; i++) {
       var m = state.messages[i];
       if (!m.to) continue;
+      if (isChannelTarget(m.to)) continue;
       var other = isMine(m) ? m.to : m.from;
       if (!other) continue;
       var key = other.toLowerCase();
@@ -558,6 +683,46 @@
     var source = state.tab === "friends" ? state.friends : chatPeople();
     var query = state.query.toLowerCase();
     var shown = 0;
+
+    if (state.tab === "all") {
+      for (var c = 0; c < state.channels.length; c++) {
+        var ch = state.channels[c];
+        var chKey = "ch:" + ch.id;
+        if (query && ch.title.toLowerCase().indexOf(query) < 0 && ch.id.toLowerCase().indexOf(query) < 0) continue;
+        var chCount = state.unread[chKey] || 0;
+        var chMsgs = state.messages.filter(function (m) { return String(m.to || "") === "ch:" + ch.id; });
+        var chBtn = document.createElement("button");
+        chBtn.className = "chat-item" + (state.chat === chKey ? " active" : "");
+        var chAv = document.createElement("span");
+        chAv.className = "avatar small chan";
+        chAv.textContent = "#";
+        chBtn.appendChild(chAv);
+        var chText = document.createElement("span");
+        chText.className = "chat-item-text";
+        var chName = document.createElement("span");
+        chName.className = "chat-item-name";
+        chName.textContent = ch.title;
+        var chLast = document.createElement("span");
+        chLast.className = "chat-item-last";
+        if (chCount > 0) chLast.textContent = chCount + " новых";
+        else if (chMsgs.length) chLast.textContent = chMsgs[chMsgs.length - 1].text;
+        else chLast.textContent = "канал · " + ch.members + " участн.";
+        chText.appendChild(chName);
+        chText.appendChild(chLast);
+        chBtn.appendChild(chText);
+        if (chCount > 0) {
+          var chBadge = document.createElement("span");
+          chBadge.className = "chat-item-badge";
+          chBadge.textContent = chCount;
+          chBtn.appendChild(chBadge);
+        }
+        chBtn.onclick = (function (id) {
+          return function () { openChat("ch:" + id); };
+        })(ch.id);
+        el.chatList.appendChild(chBtn);
+        shown++;
+      }
+    }
 
     for (var i = 0; i < source.length; i++) {
       var u = source[i];
@@ -629,15 +794,24 @@
   function openChat(nick) {
     state.chat = nick || "";
     state.unread[state.chat.toLowerCase()] = 0;
-    el.chatTitle.textContent = nick ? displayOf(nick) : "Общий чат";
-    el.chatSub.textContent = nick ? "@" + nick : "все пользователи";
-    var av = el.chatAvatar;
-    if (nick) {
-      av.className = "avatar small " + avatarClass(avatarOf(nick));
-      av.textContent = displayOf(nick).charAt(0).toUpperCase();
+    var ch = isChannelTarget(nick) ? channelOf(nick) : null;
+    if (ch) {
+      el.chatTitle.textContent = ch.title;
+      el.chatSub.textContent = "канал · " + ch.members + " участн.";
+      el.chatAvatar.className = "avatar small chan";
+      el.chatAvatar.textContent = "#";
+      el.chatAvatar.style.backgroundImage = "";
     } else {
-      av.className = "avatar small hash";
-      av.textContent = "#";
+      el.chatTitle.textContent = nick ? displayOf(nick) : "Общий чат";
+      el.chatSub.textContent = nick ? "@" + nick : "все пользователи";
+      var av = el.chatAvatar;
+      if (nick) {
+        av.className = "avatar small " + avatarClass(avatarOf(nick));
+        av.textContent = displayOf(nick).charAt(0).toUpperCase();
+      } else {
+        av.className = "avatar small hash";
+        av.textContent = "#";
+      }
     }
     el.app.classList.add("show-chat");
     renderChatList();
@@ -646,8 +820,13 @@
   }
 
   function messagesFor(chat) {
+    if (isChannelTarget(chat)) {
+      var asked = String(chat);
+      return state.messages.filter(function (m) { return String(m.to || "") === asked; });
+    }
     return state.messages.filter(function (m) {
       if (!chat) return !m.to;
+      if (isChannelTarget(m.to)) return false;
       var a = m.from.toLowerCase();
       var b = (m.to || "").toLowerCase();
       var me = state.nick.toLowerCase();
@@ -659,8 +838,11 @@
   function renderMessages() {
     if (!el.messages) return;
     var list = messagesFor(state.chat);
-    var atBottom = el.messages.scrollTop + el.messages.clientHeight >= el.messages.scrollHeight - 40;
-    el.messages.innerHTML = "";
+    var box = el.messages;
+    var prevTop = box.scrollTop;
+    var prevHeight = box.scrollHeight;
+    var atBottom = prevTop + box.clientHeight >= prevHeight - 40;
+    box.innerHTML = "";
 
     for (var i = 0; i < list.length; i++) {
       var m = list[i];
@@ -692,7 +874,12 @@
       el.messages.appendChild(empty);
     }
 
-    if (atBottom) el.messages.scrollTop = el.messages.scrollHeight;
+    if (atBottom) {
+      el.messages.scrollTop = el.messages.scrollHeight;
+    } else {
+      var grown = el.messages.scrollHeight - prevHeight;
+      el.messages.scrollTop = prevTop + (grown > 0 ? grown : 0);
+    }
   }
 
   function setTab(tab) {
@@ -737,13 +924,20 @@
     if (!text) return;
     el.text.value = "";
     api("send", { token: state.token, to: state.chat, text: text }).then(function (res) {
-      if (!res || !res.ok) { toast((res && res.error) || "не отправилось"); return; }
+      if (!res || !res.ok) {
+        if (!el.text.value) el.text.value = text;
+        toast((res && res.error) || "не отправилось");
+        return;
+      }
       if (res.message && addMessages([res.message])) {
         renderMessages();
         renderChatList();
         updateTitle();
       }
-    }).catch(function () { toast("сервер не отвечает"); });
+    }).catch(function () {
+      if (!el.text.value) el.text.value = text;
+      toast("сервер не отвечает");
+    });
   }
 
   function syncProfileUi() {
@@ -872,6 +1066,7 @@
     el.settings.classList.remove("hidden");
     syncSettingsUi();
     syncProfileUi();
+    syncAccountUi();
   }
 
   function closeSettings() {
@@ -916,6 +1111,124 @@
     }
   }
 
+  function loadChannels() {
+    if (!state.token) return;
+    api("channels", { token: state.token }).then(function (res) {
+      if (!res || !res.ok) return;
+      state.channels = res.channels || [];
+      renderChatList();
+    }).catch(function () { });
+  }
+
+  function openNewSheet() {
+    if (!state.alive) return;
+    el.newSheet.classList.remove("hidden");
+    setNewTab("chat");
+    el.newErr.textContent = "";
+    el.chanErr.textContent = "";
+    el.chanJoinErr.textContent = "";
+    el.newQuery.value = "";
+    el.foundCard.classList.add("hidden");
+    state.found = null;
+    setTimeout(function () { el.newQuery.focus(); }, 30);
+  }
+
+  function closeNewSheet() {
+    el.newSheet.classList.add("hidden");
+  }
+
+  function setNewTab(kind) {
+    $("newChatPane").classList.toggle("hidden", kind !== "chat");
+    $("newChanPane").classList.toggle("hidden", kind !== "channel");
+    var btns = el.newSeg.querySelectorAll(".seg-btn");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("active", btns[i].getAttribute("data-v") === kind);
+    }
+  }
+
+  function doLookup() {
+    var query = el.newQuery.value.trim();
+    el.newErr.textContent = "";
+    el.foundCard.classList.add("hidden");
+    state.found = null;
+    if (!query) { el.newErr.textContent = "введите ник или номер"; return; }
+    el.btnFind.disabled = true;
+    el.btnFind.textContent = "ищу…";
+    api("lookup", { query: query }).then(function (res) {
+      el.btnFind.disabled = false;
+      el.btnFind.textContent = "Найти";
+      if (!res || !res.ok) {
+        el.newErr.textContent = (res && res.error) || "ник или номер не найден";
+        return;
+      }
+      state.found = res.user;
+      el.foundName.textContent = res.user.displayName || res.user.nick;
+      el.foundNick.textContent = "@" + res.user.nick + " · " + (res.user.online ? "в сети" : "не в сети");
+      applyAvatar(el.foundAv, res.user.nick, res.user.avatar, "");
+      el.foundCard.classList.remove("hidden");
+    }).catch(function () {
+      el.btnFind.disabled = false;
+      el.btnFind.textContent = "Найти";
+      el.newErr.textContent = "сервер не отвечает";
+    });
+  }
+
+  function startChatWithFound() {
+    if (!state.found) return;
+    var nick = state.found.nick;
+    api("friend-add", { token: state.token, nick: nick }).then(function () { loadFriends(); }).catch(function () { });
+    closeNewSheet();
+    toast("чат с " + nick + " открыт");
+    openChat(nick);
+  }
+
+  function createChannel() {
+    var title = el.chanTitle.value.trim();
+    var about = el.chanAbout.value.trim();
+    el.chanErr.textContent = "";
+    if (title.length < 2) { el.chanErr.textContent = "название минимум 2 символа"; return; }
+    el.btnCreateChan.disabled = true;
+    el.btnCreateChan.textContent = "создаю…";
+    api("channel-create", { token: state.token, title: title, about: about }).then(function (res) {
+      el.btnCreateChan.disabled = false;
+      el.btnCreateChan.textContent = "Создать канал";
+      if (!res || !res.ok) { el.chanErr.textContent = (res && res.error) || "не получилось"; return; }
+      el.chanTitle.value = "";
+      el.chanAbout.value = "";
+      closeNewSheet();
+      toast("канал создан: " + res.channel.title);
+      loadChannels();
+      openChat("ch:" + res.channel.id);
+    }).catch(function () {
+      el.btnCreateChan.disabled = false;
+      el.btnCreateChan.textContent = "Создать канал";
+      el.chanErr.textContent = "сервер не отвечает";
+    });
+  }
+
+  function joinChannel() {
+    var raw = el.chanJoin.value.trim();
+    el.chanJoinErr.textContent = "";
+    var id = raw.replace(/.*ch[:=]/i, "").replace(/[^A-Za-z0-9]/g, "");
+    if (!id) { el.chanJoinErr.textContent = "введите код-ссылку канала"; return; }
+    el.btnJoinChan.disabled = true;
+    el.btnJoinChan.textContent = "вступаю…";
+    api("channel-join", { token: state.token, id: id }).then(function (res) {
+      el.btnJoinChan.disabled = false;
+      el.btnJoinChan.textContent = "Вступить";
+      if (!res || !res.ok) { el.chanJoinErr.textContent = (res && res.error) || "канал не найден"; return; }
+      el.chanJoin.value = "";
+      state.channels = res.channels || state.channels;
+      closeNewSheet();
+      toast("вступили в канал: " + res.channel.title);
+      openChat("ch:" + res.channel.id);
+    }).catch(function () {
+      el.btnJoinChan.disabled = false;
+      el.btnJoinChan.textContent = "Вступить";
+      el.chanJoinErr.textContent = "сервер не отвечает";
+    });
+  }
+
   function init() {
     el.onboarding = $("onboarding");
     el.onbDots = $("onbDots");
@@ -927,11 +1240,23 @@
     el.nickErr = $("nick-err");
     el.password = $("password");
     el.passErr = $("pass-err");
+    el.regEmail = $("reg-email");
+    el.emailErr = $("email-err");
+    el.finishBtn = $("finishAuth");
     el.userErr = $("user-err");
     el.loginNick = $("loginNick");
     el.loginPass = $("loginPass");
     el.loginError = $("loginError");
     el.serverName = $("serverName");
+    el.resetLogin = $("resetLogin");
+    el.resetErr = $("resetErr");
+    el.resetErr2 = $("resetErr2");
+    el.resetHint = $("resetHint");
+    el.resetCode = $("resetCode");
+    el.resetPass = $("resetPass");
+    el.resetStep2 = $("resetStep2");
+    el.btnResetSend = $("btnResetSend");
+    el.btnResetApply = $("btnResetApply");
 
     el.app = $("app");
     el.myNick = $("myNick");
@@ -976,6 +1301,36 @@
     el.volumeValue = $("volumeValue");
     el.toast = $("toast");
 
+    el.newSheet = $("newSheet");
+    el.newSeg = $("newSeg");
+    el.newQuery = $("newQuery");
+    el.newErr = $("newErr");
+    el.btnFind = $("btnFind");
+    el.foundCard = $("foundCard");
+    el.foundAv = $("foundAv");
+    el.foundName = $("foundName");
+    el.foundNick = $("foundNick");
+    el.chanTitle = $("chanTitle");
+    el.chanAbout = $("chanAbout");
+    el.chanErr = $("chanErr");
+    el.btnCreateChan = $("btnCreateChan");
+    el.chanJoin = $("chanJoin");
+    el.chanJoinErr = $("chanJoinErr");
+    el.btnJoinChan = $("btnJoinChan");
+
+    el.setEmailState = $("set-email-state");
+    el.setPassState = $("set-pass-state");
+    el.setYaState = $("set-ya-state");
+    el.btnEmailEdit = $("btnEmailEdit");
+    el.setEmailIn = $("set-email-in");
+    el.setEmailErr = $("set-email-err");
+    el.emailEdit = $("email-edit");
+    el.emailCodeWrap = $("email-code-wrap");
+    el.setEmailCode = $("set-email-code");
+    el.btnPassEdit = $("btnPassEdit");
+    el.passEdit = $("pass-edit");
+    el.setPassErr = $("set-pass-err");
+
     el.serverName.textContent = location.host || "локальный файл";
 
     loadSettings();
@@ -997,6 +1352,25 @@
     $("backToStart").addEventListener("click", function () { showStep(1); });
     $("btnLogin").addEventListener("click", doLogin);
     el.loginPass.addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+    $("toReset").addEventListener("click", function () {
+      el.resetLogin.value = el.loginNick.value.trim();
+      el.resetErr.textContent = "";
+      el.resetErr2.textContent = "";
+      el.resetHint.textContent = "Введи ник, телефон или почту — пришлём код на привязанную почту.";
+      showStep("reset");
+      el.resetLogin.focus();
+    });
+    $("toRegister").addEventListener("click", function () { showStep(1); el.phone.focus(); });
+    $("resetBack").addEventListener("click", function () { showStep("login"); });
+    el.btnResetSend.addEventListener("click", resetSend);
+    el.btnResetApply.addEventListener("click", resetApply);
+    el.resetLogin.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); resetSend(); }
+    });
+    el.resetPass.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); resetApply(); }
+    });
+    el.regEmail.addEventListener("keydown", function (e) { if (e.key === "Enter") finishAuth(); });
     $("yaStart").addEventListener("click", startYandex);
     $("yaLogin").addEventListener("click", startYandex);
     $("srvConnect").addEventListener("click", connectServer);
@@ -1013,6 +1387,10 @@
       else startYandex();
     } else if (needsServerPicker()) {
       showStep("srv");
+    } else if (wantsRegister()) {
+      clearQueryFlag();
+      showStep(1);
+      el.phone.focus();
     }
 
     $("railChats").addEventListener("click", function () {
@@ -1032,7 +1410,9 @@
     $("btnDone").addEventListener("click", closeSettings);
     el.settings.addEventListener("click", function (e) { if (e.target === el.settings) closeSettings(); });
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape" && !el.settings.classList.contains("hidden")) closeSettings();
+      if (e.key !== "Escape") return;
+      if (!el.newSheet.classList.contains("hidden")) { closeNewSheet(); return; }
+      if (!el.settings.classList.contains("hidden")) closeSettings();
     });
 
     $("railTheme").addEventListener("click", function () {
@@ -1042,6 +1422,99 @@
       syncSettingsUi();
     });
     $("railLogout").addEventListener("click", function () { backToLogin(""); });
+
+    $("btnNew").addEventListener("click", openNewSheet);
+    $("btnNewClose").addEventListener("click", closeNewSheet);
+    el.newSheet.addEventListener("click", function (e) { if (e.target === el.newSheet) closeNewSheet(); });
+    var newBtns = el.newSeg.querySelectorAll(".seg-btn");
+    for (var nb = 0; nb < newBtns.length; nb++) {
+      newBtns[nb].addEventListener("click", function () { setNewTab(this.getAttribute("data-v")); });
+    }
+    el.btnFind.addEventListener("click", doLookup);
+    el.newQuery.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); doLookup(); }
+    });
+    $("btnStartChat").addEventListener("click", startChatWithFound);
+    el.btnCreateChan.addEventListener("click", createChannel);
+    el.btnJoinChan.addEventListener("click", joinChannel);
+    el.chanJoin.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); joinChannel(); }
+    });
+
+    el.btnEmailEdit.addEventListener("click", function () {
+      el.emailEdit.classList.toggle("hidden");
+      el.setEmailErr.textContent = "";
+      if (!el.emailEdit.classList.contains("hidden")) el.setEmailIn.focus();
+    });
+
+    $("btnEmailSend").addEventListener("click", function () {
+      var email = el.setEmailIn.value.trim();
+      var btn = $("btnEmailSend");
+      el.setEmailErr.textContent = "";
+      if (!email) { el.setEmailErr.textContent = "введите адрес почты"; return; }
+      btn.disabled = true;
+      btn.textContent = "отправляю…";
+      api("email-request", { token: state.token, email: email }).then(function (res) {
+        btn.disabled = false;
+        btn.textContent = "Отправить код";
+        if (!res || !res.ok) { el.setEmailErr.textContent = (res && res.error) || "не получилось"; return; }
+        el.emailCodeWrap.classList.remove("hidden");
+        if (res.sent) {
+          el.setEmailErr.textContent = "код отправлен на " + res.email;
+        } else {
+          el.setEmailErr.textContent = "почта не настроена — код: " + res.code;
+          el.setEmailCode.value = res.code;
+        }
+        el.setEmailCode.focus();
+      }).catch(function () {
+        btn.disabled = false;
+        btn.textContent = "Отправить код";
+        el.setEmailErr.textContent = "сервер не отвечает";
+      });
+    });
+
+    $("btnEmailConfirm").addEventListener("click", function () {
+      var code = el.setEmailCode.value.trim();
+      el.setEmailErr.textContent = "";
+      if (!code) { el.setEmailErr.textContent = "введите код из письма"; return; }
+      api("email-verify", { token: state.token, code: code }).then(function (res) {
+        if (!res || !res.ok) { el.setEmailErr.textContent = (res && res.error) || "не получилось"; return; }
+        if (res.profile) mergeProfile(res.profile);
+        syncAccountUi();
+        el.emailCodeWrap.classList.add("hidden");
+        el.emailEdit.classList.add("hidden");
+        el.setEmailCode.value = "";
+        toast("почта подтверждена");
+      }).catch(function () { el.setEmailErr.textContent = "сервер не отвечает"; });
+    });
+
+    el.btnPassEdit.addEventListener("click", function () {
+      el.passEdit.classList.toggle("hidden");
+      el.setPassErr.textContent = "";
+    });
+
+    $("btnPassSave").addEventListener("click", function () {
+      var oldPass = $("set-old-pass").value;
+      var newPass = $("set-new-pass").value;
+      el.setPassErr.textContent = "";
+      if (newPass.length < 4) { el.setPassErr.textContent = "новый пароль минимум 4 символа"; return; }
+      api("password-change", { token: state.token, oldPassword: oldPass, password: newPass }).then(function (res) {
+        if (!res || !res.ok) { el.setPassErr.textContent = (res && res.error) || "не получилось"; return; }
+        if (res.profile) mergeProfile(res.profile);
+        $("set-old-pass").value = "";
+        $("set-new-pass").value = "";
+        el.passEdit.classList.add("hidden");
+        syncAccountUi();
+        toast("пароль обновлён");
+      }).catch(function () { el.setPassErr.textContent = "сервер не отвечает"; });
+    });
+
+    $("btnYaLink").addEventListener("click", function () {
+      var acc = state.account || {};
+      if (acc.oauth === "yandex") { toast("аккаунт уже привязан к Яндексу"); return; }
+      if (state.yandexReady === false) { toast("вход через Яндекс не настроен на сервере"); return; }
+      startYandex();
+    });
 
     el.tabAll.addEventListener("click", function () { setTab("all"); });
     el.tabFriends.addEventListener("click", function () { setTab("friends"); });
@@ -1245,6 +1718,10 @@
   }
 
   function startYandex() {
+    if (state.yandexReady === false) {
+      toast("Вход через Яндекс не настроен на сервере — войди по нику и паролю");
+      return;
+    }
     if (API_BASE) {
       location.href = API_BASE + "/auth/yandex?return=" + encodeURIComponent(location.origin + location.pathname);
       return;
@@ -1253,11 +1730,14 @@
   }
 
   function checkYandex() {
+    state.yandexReady = null;
     api("auth-status", {}).then(function (res) {
-      if (!res || !res.yandex) return;
-      $("yaStart").classList.remove("hidden");
-      $("yaLogin").classList.remove("hidden");
-    }).catch(function () { });
+      state.yandexReady = !!(res && res.yandex);
+    }).catch(function () { state.yandexReady = null; });
+  }
+
+  function wantsRegister() {
+    try { return new URLSearchParams(location.search).get("reg") === "1"; } catch (e) { return false; }
   }
 
   function fromYandex() {
