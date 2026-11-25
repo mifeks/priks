@@ -447,6 +447,12 @@
     }
     if (el.btnEmailEdit) el.btnEmailEdit.textContent = acc.email ? "Изменить" : "Указать";
     if (el.setEmailIn && !el.setEmailIn.value && acc.email) el.setEmailIn.value = acc.email;
+    if (el.setPhoneState) {
+      var ph = String(acc.phone || "");
+      el.setPhoneState.textContent = ph.length === 10
+        ? "+7 " + ph.slice(0, 3) + " " + ph.slice(3, 6) + "-" + ph.slice(6, 8) + "-" + ph.slice(8)
+        : "не указан";
+    }
   }
 
   function enter(nick, token) {
@@ -466,7 +472,13 @@
     renderChatList();
     loadHistory("");
     loadFriends();
+    loadChannels();
     poll();
+    var askedPane = "";
+    try { askedPane = new URLSearchParams(location.search).get("pane") || ""; } catch (e) { }
+    if (askedPane && PANE_TITLES[askedPane]) {
+      setTimeout(function () { openSettings(askedPane); }, 250);
+    }
   }
 
   function backToLogin(message) {
@@ -983,6 +995,28 @@
     }
     if (el.setNameIn) el.setNameIn.value = label;
     if (el.setNickIn) el.setNickIn.value = state.nick || "";
+    var name2 = $("set-name2");
+    if (name2) name2.textContent = label;
+    var nick2 = $("set-nick2");
+    if (nick2) nick2.textContent = "@" + (state.nick || "username");
+    var av2 = $("set-av2");
+    if (av2) {
+      av2.className = "avatar lg " + avatarClass(profile.avatar);
+      av2.textContent = label.charAt(0).toUpperCase();
+      if (profile.photo) {
+        av2.style.backgroundImage = "url(" + profile.photo + ")";
+        av2.style.backgroundSize = "cover";
+        av2.style.color = "transparent";
+      } else {
+        av2.style.backgroundImage = "";
+        av2.style.color = "";
+      }
+    }
+    var st2 = $("set-status2");
+    if (st2 && el.setStatus) {
+      st2.className = el.setStatus.className;
+      st2.innerHTML = el.setStatus.innerHTML;
+    }
     markAvatarPicks();
     markStatusSeg();
   }
@@ -1062,15 +1096,57 @@
     }
   }
 
-  function openSettings() {
+  var PANE_TITLES = {
+    profile: "Профиль",
+    security: "Безопасность",
+    notify: "Уведомления",
+    devices: "Устройства",
+    look: "Оформление",
+    keys: "Сочетания клавиш",
+    about: "О приложении"
+  };
+
+  function showPane(name) {
+    var pane = PANE_TITLES[name] ? name : "profile";
+    var panes = document.querySelectorAll("#settings .pane");
+    for (var i = 0; i < panes.length; i++) {
+      panes[i].classList.toggle("active", panes[i].getAttribute("data-pane") === pane);
+    }
+    var items = el.setsList.querySelectorAll(".sets-item");
+    for (var j = 0; j < items.length; j++) {
+      items[j].classList.toggle("active", items[j].getAttribute("data-pane") === pane);
+    }
+    if (el.setsTitle) el.setsTitle.textContent = PANE_TITLES[pane];
+    if (el.sets) el.sets.classList.add("pane-open");
+    if (el.setsBody) el.setsBody.scrollTop = 0;
+    if (pane === "devices" || pane === "about") syncDevicesUi();
+  }
+
+  function syncDevicesUi() {
+    var ua = navigator.userAgent || "";
+    var browser = "Браузер";
+    if (/Edg\//.test(ua)) browser = "Microsoft Edge";
+    else if (/YaBrowser/.test(ua)) browser = "Яндекс Браузер";
+    else if (/Firefox\//.test(ua)) browser = "Firefox";
+    else if (/Chrome\//.test(ua)) browser = "Chrome";
+    else if (/Safari\//.test(ua)) browser = "Safari";
+    if ($("devBrowser")) $("devBrowser").textContent = browser + " · " + (navigator.platform || "веб");
+    if ($("devServer")) $("devServer").textContent = API_BASE || location.host || "этот сервер";
+    if ($("devServer2")) $("devServer2").textContent = API_BASE || location.host || "этот сервер";
+    if ($("devNick")) $("devNick").textContent = state.nick ? "@" + state.nick : "—";
+  }
+
+  function openSettings(pane) {
     el.settings.classList.remove("hidden");
     syncSettingsUi();
     syncProfileUi();
     syncAccountUi();
+    showPane(pane || "profile");
   }
 
   function closeSettings() {
     el.settings.classList.add("hidden");
+    if (el.sets) el.sets.classList.remove("pane-open");
   }
 
   function setRail(activeId) {
@@ -1276,6 +1352,10 @@
     el.text = $("text");
 
     el.settings = $("settings");
+    el.sets = $("sets");
+    el.setsList = $("setsList");
+    el.setsTitle = $("setsTitle");
+    el.setsBody = $("setsBody");
     el.setAv = $("set-av");
     el.setName = $("set-name");
     el.setNick = $("set-nick");
@@ -1319,6 +1399,7 @@
     el.btnJoinChan = $("btnJoinChan");
 
     el.setEmailState = $("set-email-state");
+    el.setPhoneState = $("set-phone-state");
     el.setPassState = $("set-pass-state");
     el.setYaState = $("set-ya-state");
     el.btnEmailEdit = $("btnEmailEdit");
@@ -1408,6 +1489,25 @@
     $("btnChatSettings").addEventListener("click", openSettings);
     $("btnCloseSettings").addEventListener("click", closeSettings);
     $("btnDone").addEventListener("click", closeSettings);
+
+    var setsItems = el.setsList.querySelectorAll(".sets-item");
+    for (var si = 0; si < setsItems.length; si++) {
+      setsItems[si].addEventListener("click", function () { showPane(this.getAttribute("data-pane")); });
+    }
+    $("setMeCard").addEventListener("click", function () { showPane("profile"); });
+    $("btnSetsBack").addEventListener("click", function () {
+      el.sets.classList.remove("pane-open");
+      showPane("profile");
+      el.sets.classList.remove("pane-open");
+    });
+    $("btnInvite").addEventListener("click", function () {
+      closeSettings();
+      openNewSheet();
+    });
+    $("btnLogout2").addEventListener("click", function () {
+      closeSettings();
+      backToLogin("");
+    });
     el.settings.addEventListener("click", function (e) { if (e.target === el.settings) closeSettings(); });
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
@@ -1514,6 +1614,25 @@
       if (acc.oauth === "yandex") { toast("аккаунт уже привязан к Яндексу"); return; }
       if (state.yandexReady === false) { toast("вход через Яндекс не настроен на сервере"); return; }
       startYandex();
+    });
+
+    $("btnPhoneEdit").addEventListener("click", function () {
+      $("phone-edit").classList.toggle("hidden");
+      $("set-phone-err").textContent = "";
+      if (!$("phone-edit").classList.contains("hidden")) $("set-phone-in").focus();
+    });
+
+    $("btnPhoneSave").addEventListener("click", function () {
+      var value = $("set-phone-in").value.trim();
+      var err = $("set-phone-err");
+      err.textContent = "";
+      api("profile", { token: state.token, phone: value }).then(function (res) {
+        if (!res || !res.ok) { err.textContent = (res && res.error) || "не получилось"; return; }
+        if (res.profile) mergeProfile(res.profile);
+        syncAccountUi();
+        $("phone-edit").classList.add("hidden");
+        toast("номер сохранён");
+      }).catch(function () { err.textContent = "сервер не отвечает"; });
     });
 
     el.tabAll.addEventListener("click", function () { setTab("all"); });
