@@ -295,7 +295,28 @@ input:disabled { opacity: .6; cursor: not-allowed; }
   font-size: .58rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
   vertical-align: middle; white-space: nowrap;
 }
-.verif { color: var(--accent); margin-left: 5px; font-size: .82em; }
+.verif {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 6px;
+  flex: 0 0 auto;
+  vertical-align: 1px;
+  cursor: help;
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.chat-item-name .verif, .info-name .verif, .chat-title .verif {
+  display: inline-grid;
+  vertical-align: middle;
+  box-shadow: none;
+}
 
 .plus-menu {
   position: absolute; right: 14px; top: 54px; z-index: 40;
