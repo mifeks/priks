@@ -181,6 +181,20 @@ function validEmail(value) {
   return email;
 }
 
+const MIN_AGE = 14;
+
+function validBirth(value) {
+  const raw = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+  const ts = Date.parse(raw + "T00:00:00Z");
+  if (!Number.isFinite(ts)) return "";
+  const when = new Date(ts);
+  if (when.toISOString().slice(0, 10) !== raw) return "";
+  const years = (Date.now() - ts) / (365.25 * 24 * 3600 * 1000);
+  if (years < MIN_AGE || years > 110) return "";
+  return raw;
+}
+
 function makeCode() {
   return String(crypto.randomInt(100000, 999999));
 }
@@ -278,6 +292,7 @@ function selfProfileOf(user) {
   base.email = user.email || "";
   base.emailVerified = !!user.emailVerified;
   base.hasPassword = !!user.hash;
+  base.birth = user.birth || "";
   base.privacy = privacyOf(user);
   base.blocked = blockListOf(user.nick.toLowerCase(), "");
   return base;
@@ -419,7 +434,7 @@ function publicGroup(g, myKey) {
   for (const key of members) {
     const user = store.users[key];
     if (!user) continue;
-    out.people.push({ nick: user.nick, displayName: user.displayName || user.nick, avatar: user.avatar || 1, owner: isOwnerKey(key) });
+    out.people.push({ nick: user.nick, displayName: user.displayName || user.nick, avatar: user.avatar || 1, photo: user.photo || "", owner: isOwnerKey(key) });
   }
   return out;
 }
@@ -480,6 +495,7 @@ function profileOf(user) {
     status: user.status || "on",
     customStatus: user.customStatus || "",
     avatar: user.avatar || 1,
+    photo: user.photo || "",
     hideOnline: !!user.hideOnline,
     oauth: user.oauth || "",
     bio: user.bio || "",
@@ -499,6 +515,8 @@ function publicUsers(viewerKey) {
       nick: user.nick,
       displayName: user.displayName || user.nick,
       avatar: seeContent ? user.avatar || 0 : 0,
+      photo: seeContent ? user.photo || "" : "",
+      bio: seeContent ? user.bio || "" : "",
       status: seeContent ? user.status || "on" : "on",
       customStatus: seeContent ? user.customStatus || "" : "",
       online: seeOnline && isOnline(user),
@@ -710,6 +728,8 @@ function handleApi(action, body) {
     }
     const email = validEmail(data.email);
     if (email && emailTaken(email, key)) return fail("эта почта уже привязана к другому нику");
+    const birth = validBirth(data.birth);
+    if (!birth) return fail("укажи дату рождения — регистрация по паролю без неё невозможна, возраст от " + MIN_AGE + " лет");
     const salt = crypto.randomBytes(12).toString("hex");
     const displayName = String(data.displayName || "").trim().slice(0, 40) || nick;
     const avatar = parseInt(data.avatar, 10);
@@ -717,6 +737,8 @@ function handleApi(action, body) {
       nick: nick,
       displayName: displayName,
       avatar: Number.isFinite(avatar) && avatar >= 1 && avatar <= 6 ? avatar : 1,
+      photo: "",
+      birth: birth,
       status: "on",
       customStatus: "",
       hideOnline: false,
@@ -757,6 +779,8 @@ function handleApi(action, body) {
         nick: user.nick,
         displayName: seeContent ? user.displayName || user.nick : user.nick,
         avatar: seeContent ? user.avatar || 1 : 0,
+        photo: seeContent ? user.photo || "" : "",
+        bio: seeContent ? user.bio || "" : "",
         status: seeContent ? user.status || "on" : "on",
         customStatus: seeContent ? user.customStatus || "" : "",
         online: allowedBy(priv.online, key, viewerKey) && !user.hideOnline && isOnline(user),
@@ -1093,6 +1117,26 @@ function handleApi(action, body) {
     if (data.avatar !== undefined) {
       const av = parseInt(data.avatar, 10);
       user.avatar = Number.isFinite(av) && av >= 0 && av <= 6 ? av : 0;
+    }
+    if (data.photo !== undefined) {
+      const raw = String(data.photo || "").trim();
+      if (!raw) {
+        user.photo = "";
+      } else {
+        const ref = imageRefOf(raw);
+        if (!ref) return fail("картинка не нашлась — загрузи фото заново");
+        user.photo = ref;
+      }
+    }
+    if (data.birth !== undefined) {
+      const raw = String(data.birth || "").trim();
+      if (raw) {
+        const birth = validBirth(raw);
+        if (!birth) return fail("дата рождения странная — нужен вид 2005-05-17, возраст от " + MIN_AGE + " лет");
+        user.birth = birth;
+      } else {
+        user.birth = "";
+      }
     }
     if (data.hideOnline !== undefined) user.hideOnline = !!data.hideOnline;
     if (data.bio !== undefined) user.bio = String(data.bio || "").trim().slice(0, 140);
