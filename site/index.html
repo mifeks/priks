@@ -1,164 +1,49 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Прикс — мессенджер для Windows и браузера</title>
-<meta name="description" content="Прикс — мессенджер без регистрации: только ник и пароль, общий чат и личные сообщения. Версия для Windows и веб-версия.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap">
+<title>Прикс — открываем мессенджер</title>
+<meta http-equiv="refresh" content="0; url=http://51.250.92.168:8777/">
+<meta name="robots" content="noindex">
 <style>
-:root{--bg:#f6f5f1;--panel:#fff;--panel2:#efece6;--text:#1c1e22;--muted:#8a8f98;--line:rgba(28,30,34,.09);--accent:#b78d4a;--accent-contrast:#fff;--shadow:0 10px 30px rgba(20,22,26,.08);--shadow-lg:0 24px 60px rgba(20,22,26,.16)}
-*{box-sizing:border-box}
-html,body{margin:0}
-body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
-.wrap{width:min(1040px,100%);margin:0 auto;padding:0 22px}
-h1,h2,h3{font-family:'Playfair Display',Georgia,serif;letter-spacing:-.02em;margin:0}
-h1{font-size:clamp(2rem,4.6vw,3.1rem);line-height:1.1}
-h2{font-size:clamp(1.4rem,2.8vw,2rem)}
-a{color:inherit}
-.btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:.95rem;padding:13px 22px;border-radius:12px;border:1px solid transparent;text-decoration:none;cursor:pointer;transition:transform .15s,filter .15s,background .15s}
-.btn:active{transform:translateY(1px)}
-.btn.primary{background:var(--accent);color:var(--accent-contrast)}
-.btn.primary:hover{filter:brightness(1.07)}
-.btn.ghost{border-color:var(--line);background:transparent}
-.btn.ghost:hover{background:var(--panel2)}
-header{border-bottom:1px solid var(--line);background:rgba(246,245,241,.86);backdrop-filter:blur(10px);position:sticky;top:0;z-index:10}
-.hrow{display:flex;align-items:center;justify-content:space-between;gap:16px;height:66px}
-.brand{display:flex;align-items:center;gap:11px;font-weight:700;font-family:'Playfair Display',serif;font-size:1.2rem;text-decoration:none}
-.tile{width:36px;height:36px;border-radius:10px;background:var(--accent);color:var(--accent-contrast);display:grid;place-items:center;font-family:'Playfair Display',serif;font-weight:700}
-.hero{padding:64px 0 44px;text-align:center}
-.chip{display:inline-block;font-size:.8rem;font-weight:600;color:var(--muted);border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 14px;margin-bottom:20px}
-.lead{color:var(--muted);font-size:1.05rem;max-width:56ch;margin:18px auto 0}
-.actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:28px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin:10px 0 56px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:var(--shadow)}
-.card h3{font-size:1.15rem;margin-bottom:8px}
-.card p{color:var(--muted);font-size:.94rem;margin:0 0 16px}
-.card .meta{font-size:.8rem;color:var(--muted);margin:0 0 16px}
-.card .btn{width:100%;justify-content:center}
-section{padding:8px 0}
-.sec-head{text-align:center;margin-bottom:26px}
-.sec-head p{color:var(--muted);margin:10px 0 0}
-.steps{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-bottom:56px}
-.step{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px}
-.step b{display:block;margin-bottom:6px}
-.step p{margin:0;color:var(--muted);font-size:.92rem}
-.note{background:var(--panel2);border-radius:14px;padding:16px 18px;font-size:.9rem;color:var(--muted);margin-bottom:52px}
-.note b{color:var(--text)}
-footer{border-top:1px solid var(--line);padding:26px 0 40px;color:var(--muted);font-size:.86rem;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
-ul.f{list-style:none;padding:0;margin:0;display:grid;gap:10px;font-size:.94rem;color:var(--muted)}
-ul.f li{padding-left:22px;position:relative}
-ul.f li::before{content:"";position:absolute;left:5px;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--accent)}
-@media(max-width:600px){.hero{padding:40px 0 30px}.hrow{height:58px}}
+  :root { --accent: #b78d4a; --bg: #f7f3ea; --text: #241f18; --muted: #7b7266; --line: #ddd3c1; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  .card { width: 100%; max-width: 380px; text-align: center; }
+  .logo {
+    width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 16px;
+    display: grid; place-items: center; background: var(--accent); color: #fff;
+    font-weight: 700; font-size: 26px;
+  }
+  h1 {
+    margin: 0 0 10px; font-family: 'Playfair Display', Georgia, serif;
+    font-size: 34px; font-weight: 600; letter-spacing: .01em;
+  }
+  p { margin: 0 0 22px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+  .btn {
+    display: block; padding: 14px 18px; border-radius: 12px; text-decoration: none;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--accent);
+  }
+  .btn:hover { filter: brightness(.95); }
+  .hint { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); }
+  .addr { margin: 18px 0 0; font-size: 12.5px; color: var(--muted); word-break: break-all; }
 </style>
 </head>
 <body>
-
-<header>
-  <div class="wrap hrow">
-    <a class="brand" href="#top"><span class="tile">П</span>Прикс</a>
-    <a class="btn ghost" href="#download">Скачать</a>
-  </div>
-</header>
-
-<main id="top">
-  <section class="hero wrap">
-    <span class="chip">Версия 1.0 · Windows и браузер</span>
-    <h1>Мессенджер без регистрации</h1>
-    <p class="lead">Только ник и пароль. Общий чат, личные сообщения и свой сервер — без телефона, почты и подтверждений.</p>
-    <div class="actions">
-      <a class="btn primary" href="priks.exe" download>Скачать для Windows</a>
-      <a class="btn ghost" href="#download">Веб-версия</a>
-    </div>
-  </section>
-
-  <section class="wrap">
-    <div class="grid">
-      <div class="card">
-        <h3>Вход за 5 секунд</h3>
-        <p>Ник и пароль — всё, что нужно. Новый ник создаётся одной кнопкой.</p>
-      </div>
-      <div class="card">
-        <h3>Общий чат и личные</h3>
-        <p>Один общий чат для всех и переписки один на один с друзьями.</p>
-      </div>
-      <div class="card">
-        <h3>Свой сервер</h3>
-        <p>Данные лежат на твоей машине. Никаких чужих облаков и аккаунтов.</p>
-      </div>
-      <div class="card">
-        <h3>Темы и акценты</h3>
-        <p>Светлая и тёмная тема, восемь акцентов, размер текста и компактный список.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="download" class="wrap">
-    <div class="sec-head">
-      <h2>Скачать</h2>
-      <p>Один файл без установщика — и веб-версия в браузере.</p>
-    </div>
-    <div class="grid">
-      <div class="card">
-        <h3>Windows</h3>
-        <p class="meta">priks.exe · 63 КБ · без установки</p>
-        <p>Клиент для Windows 10 и 11. Адрес сервера вводится на экране входа.</p>
-        <a class="btn primary" href="priks.exe" download>Скачать .exe</a>
-      </div>
-      <div class="card">
-        <h3>Браузер</h3>
-        <p class="meta">работает на ПК и телефоне</p>
-        <p>Открывается по адресу сервера: тот же чат, те же настройки.</p>
-        <a class="btn ghost" href="#web-address">Как открыть</a>
-      </div>
-      <div class="card">
-        <h3>Сервер</h3>
-        <p class="meta">Node.js · Linux или Windows</p>
-        <p>Поднимается одной командой. Инструкция — в файле DEPLOY.md в репозитории.</p>
-        <a class="btn ghost" href="#how">Как устроено</a>
-      </div>
-    </div>
-  </section>
-
-  <section class="wrap">
-    <div class="sec-head">
-      <h2>Как начать</h2>
-    </div>
-    <div class="steps">
-      <div class="step"><b>1. Запусти сервер</b><p>На своём компьютере или на виртуальной машине. В окне появятся адреса.</p></div>
-      <div class="step"><b>2. Открой клиент</b><p>Впиши адрес сервера, придумай ник и пароль, нажми «Создать ник».</p></div>
-      <div class="step"><b>3. Позови друзей</b><p>Они открывают тот же адрес в браузере или ставят клиент и создают свои ники.</p></div>
-    </div>
-  </section>
-
-  <section id="web-address" class="wrap">
-    <div class="note">
-      <b>Веб-версия</b> открывается по адресу твоего сервера, например
-      <b>https://priks.твойдомен.ru</b>. Телефон и ПК видят один и тот же чат —
-      отдельная установка не нужна.
-    </div>
-  </section>
-
-  <section id="how" class="wrap">
-    <div class="sec-head">
-      <h2>Что внутри</h2>
-    </div>
-    <ul class="f">
-      <li>Сервер на Node.js без внешних зависимостей — один файл <b>server.js</b></li>
-      <li>Веб-клиент на чистом HTML, CSS и JavaScript</li>
-      <li>ПК-клиент на WinForms, .NET Framework 4.8</li>
-      <li>Данные в одном файле <b>store.json</b>: пользователи, друзья, сообщения</li>
-      <li>Пароли — SHA256 с солью, сессии — случайные токены</li>
-    </ul>
-  </section>
-</main>
-
-<footer class="wrap">
-  <span>© 2026 Прикс · мессенджер</span>
-  <span>Файл не подписан сертификатом — SmartScreen может предупредить</span>
-</footer>
-
+<div class="card">
+  <div class="logo">П</div>
+  <h1>Прикс</h1>
+  <p>Мессенджер работает на своём сервере — сейчас откроем его в браузере.</p>
+  <a class="btn" href="http://51.250.92.168:8777/">Открыть Прикс</a>
+  <p class="addr">http://51.250.92.168:8777/</p>
+  <p class="hint">Если переход не начался сам, нажмите кнопку выше.</p>
+</div>
+<script>location.replace("http://51.250.92.168:8777/");</script>
 </body>
 </html>
