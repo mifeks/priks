@@ -267,7 +267,7 @@
     }
     if (step === "srv") {
       $("srvBox").classList.remove("hidden");
-      $("onbStep").textContent = "сервер";
+      $("onbStep").textContent = "подключение";
       setDots(0);
       return;
     }
@@ -349,7 +349,7 @@
       toast("аккаунт создан: " + res.nick);
     }).catch(function () {
       el.finishBtn.disabled = false;
-      el.userErr.textContent = "сервер не отвечает";
+      el.userErr.textContent = "нет связи, попробуйте ещё раз";
     });
   }
 
@@ -359,7 +359,7 @@
       if (!res || !res.ok) { el.loginError.textContent = (res && res.error) || "не вышло"; return; }
       if (res.profile) mergeProfile(res.profile);
       enter(res.nick, res.token);
-    }).catch(function () { el.loginError.textContent = "сервер не отвечает"; });
+    }).catch(function () { el.loginError.textContent = "нет связи, попробуйте ещё раз"; });
   }
 
   function resetSend() {
@@ -377,14 +377,14 @@
       if (res.sent) {
         el.resetHint.textContent = "Код отправлен на " + res.email + ". Введите его и новый пароль.";
       } else {
-        el.resetHint.textContent = "Почта не настроена на сервере, поэтому код показан тут: " + res.code;
+        el.resetHint.textContent = "Почта пока не подключена, поэтому код показан тут: " + res.code;
         el.resetCode.value = res.code;
       }
       el.resetCode.focus();
     }).catch(function () {
       el.btnResetSend.disabled = false;
       el.btnResetSend.textContent = "Получить код";
-      el.resetErr.textContent = "сервер не отвечает";
+      el.resetErr.textContent = "нет связи, попробуйте ещё раз";
     });
   }
 
@@ -408,7 +408,7 @@
       el.loginPass.focus();
     }).catch(function () {
       el.btnResetApply.disabled = false;
-      el.resetErr2.textContent = "сервер не отвечает";
+      el.resetErr2.textContent = "нет связи, попробуйте ещё раз";
     });
   }
 
@@ -919,7 +919,7 @@
       state.query = "";
       toast("в друзьях: " + nick);
       loadFriends();
-    }).catch(function () { toast("сервер не отвечает"); });
+    }).catch(function () { toast("нет связи, попробуйте ещё раз"); });
   }
 
   function removeFriend(nick) {
@@ -928,7 +928,7 @@
       if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
       toast("убрали из друзей: " + nick);
       loadFriends();
-    }).catch(function () { toast("сервер не отвечает"); });
+    }).catch(function () { toast("нет связи, попробуйте ещё раз"); });
   }
 
   function send() {
@@ -948,7 +948,7 @@
       }
     }).catch(function () {
       if (!el.text.value) el.text.value = text;
-      toast("сервер не отвечает");
+      toast("нет связи, попробуйте ещё раз");
     });
   }
 
@@ -1131,8 +1131,6 @@
     else if (/Chrome\//.test(ua)) browser = "Chrome";
     else if (/Safari\//.test(ua)) browser = "Safari";
     if ($("devBrowser")) $("devBrowser").textContent = browser + " · " + (navigator.platform || "веб");
-    if ($("devServer")) $("devServer").textContent = API_BASE || location.host || "этот сервер";
-    if ($("devServer2")) $("devServer2").textContent = API_BASE || location.host || "этот сервер";
     if ($("devNick")) $("devNick").textContent = state.nick ? "@" + state.nick : "—";
   }
 
@@ -1245,7 +1243,7 @@
     }).catch(function () {
       el.btnFind.disabled = false;
       el.btnFind.textContent = "Найти";
-      el.newErr.textContent = "сервер не отвечает";
+      el.newErr.textContent = "нет связи, попробуйте ещё раз";
     });
   }
 
@@ -1278,7 +1276,7 @@
     }).catch(function () {
       el.btnCreateChan.disabled = false;
       el.btnCreateChan.textContent = "Создать канал";
-      el.chanErr.textContent = "сервер не отвечает";
+      el.chanErr.textContent = "нет связи, попробуйте ещё раз";
     });
   }
 
@@ -1301,7 +1299,7 @@
     }).catch(function () {
       el.btnJoinChan.disabled = false;
       el.btnJoinChan.textContent = "Вступить";
-      el.chanJoinErr.textContent = "сервер не отвечает";
+      el.chanJoinErr.textContent = "нет связи, попробуйте ещё раз";
     });
   }
 
@@ -1323,7 +1321,6 @@
     el.loginNick = $("loginNick");
     el.loginPass = $("loginPass");
     el.loginError = $("loginError");
-    el.serverName = $("serverName");
     el.resetLogin = $("resetLogin");
     el.resetErr = $("resetErr");
     el.resetErr2 = $("resetErr2");
@@ -1412,7 +1409,6 @@
     el.passEdit = $("pass-edit");
     el.setPassErr = $("set-pass-err");
 
-    el.serverName.textContent = location.host || "локальный файл";
 
     loadSettings();
     loadProfile();
@@ -1456,10 +1452,6 @@
     $("yaLogin").addEventListener("click", startYandex);
     $("srvConnect").addEventListener("click", connectServer);
     $("srvAddr").addEventListener("keydown", function (e) { if (e.key === "Enter") connectServer(); });
-    $("srvLocal").addEventListener("click", function () {
-      el.srvAddr.value = "http://127.0.0.1:8777";
-      connectServer();
-    });
     checkYandex();
 
     if (wantsYandexLogin()) {
@@ -1569,7 +1561,7 @@
       }).catch(function () {
         btn.disabled = false;
         btn.textContent = "Отправить код";
-        el.setEmailErr.textContent = "сервер не отвечает";
+        el.setEmailErr.textContent = "нет связи, попробуйте ещё раз";
       });
     });
 
@@ -1585,7 +1577,7 @@
         el.emailEdit.classList.add("hidden");
         el.setEmailCode.value = "";
         toast("почта подтверждена");
-      }).catch(function () { el.setEmailErr.textContent = "сервер не отвечает"; });
+      }).catch(function () { el.setEmailErr.textContent = "нет связи, попробуйте ещё раз"; });
     });
 
     el.btnPassEdit.addEventListener("click", function () {
@@ -1606,13 +1598,13 @@
         el.passEdit.classList.add("hidden");
         syncAccountUi();
         toast("пароль обновлён");
-      }).catch(function () { el.setPassErr.textContent = "сервер не отвечает"; });
+      }).catch(function () { el.setPassErr.textContent = "нет связи, попробуйте ещё раз"; });
     });
 
     $("btnYaLink").addEventListener("click", function () {
       var acc = state.account || {};
       if (acc.oauth === "yandex") { toast("аккаунт уже привязан к Яндексу"); return; }
-      if (state.yandexReady === false) { toast("вход через Яндекс не настроен на сервере"); return; }
+      if (state.yandexReady === false) { toast("вход через Яндекс пока недоступен"); return; }
       startYandex();
     });
 
@@ -1632,7 +1624,7 @@
         syncAccountUi();
         $("phone-edit").classList.add("hidden");
         toast("номер сохранён");
-      }).catch(function () { err.textContent = "сервер не отвечает"; });
+      }).catch(function () { err.textContent = "нет связи, попробуйте ещё раз"; });
     });
 
     el.tabAll.addEventListener("click", function () { setTab("all"); });
@@ -1774,7 +1766,7 @@
           toast((res && res.error) || "не сохранилось");
         }
         loadHistory(state.chat);
-      }).catch(function () { toast("сервер не отвечает"); });
+      }).catch(function () { toast("нет связи, попробуйте ещё раз"); });
     });
 
     $("reset-btn").addEventListener("click", function () {
@@ -1821,7 +1813,7 @@
   function connectServer() {
     var raw = $("srvAddr").value;
     var base = normalizeBase(raw);
-    if (!base) { $("srvErr").textContent = "введите адрес сервера"; return; }
+    if (!base) { $("srvErr").textContent = "введите адрес подключения"; return; }
     $("srvErr").textContent = "";
     $("srvConnect").disabled = true;
     $("srvConnect").textContent = "проверяю…";
@@ -1832,13 +1824,13 @@
     }).catch(function () {
       $("srvConnect").disabled = false;
       $("srvConnect").textContent = "Подключиться";
-      $("srvErr").textContent = "сервер не ответил — проверьте адрес и порт";
+      $("srvErr").textContent = "не удалось подключиться — проверьте адрес";
     });
   }
 
   function startYandex() {
     if (state.yandexReady === false) {
-      toast("Вход через Яндекс не настроен на сервере — войди по нику и паролю");
+      toast("Вход через Яндекс пока недоступен — войди по нику и паролю");
       return;
     }
     if (API_BASE) {
@@ -1884,7 +1876,7 @@
       toast("вход через Яндекс: " + res.nick);
     }).catch(function () {
       showStep("login");
-      el.loginError.textContent = "сервер не отвечает";
+      el.loginError.textContent = "нет связи, попробуйте ещё раз";
     });
     return true;
   }
