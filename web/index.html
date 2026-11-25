@@ -36,12 +36,13 @@
 
     <div class="onb-step" id="p1">
       <h1>Ваш номер</h1>
-      <p class="hint">Нужен только как логин — код не приходит, SMS не отправляем.</p>
+      <p class="hint">Номер нужен, чтобы вас находили по номеру и восстанавливали пароль. SMS не отправляем.</p>
       <label for="phone">Телефон</label>
       <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 900 000-00-00" maxlength="20">
       <div class="err" id="phone-err"></div>
       <button class="btn primary wide" id="phoneNext">Далее</button>
-      <button class="btn ghost wide ya-btn hidden" id="yaStart" type="button">
+      <div class="or"><span>или</span></div>
+      <button class="btn ghost wide ya-btn" id="yaStart" type="button">
         <span class="ya-mark">Я</span> Войти через Яндекс
       </button>
       <button class="link-btn" id="toLogin">уже есть ник — войти</button>
@@ -77,17 +78,20 @@
       <label for="password">Пароль</label>
       <input id="password" type="password" maxlength="64" autocomplete="new-password" placeholder="минимум 4 символа">
       <div class="err" id="pass-err"></div>
+      <label for="reg-email">Почта <span class="opt">— необязательно, для сброса пароля</span></label>
+      <input id="reg-email" type="email" maxlength="120" spellcheck="false" autocomplete="email" placeholder="name@mail.ru">
+      <div class="err" id="email-err"></div>
       <div class="onb-row">
         <button class="btn ghost" id="backTo2">Назад</button>
-        <button class="btn primary" id="finishAuth">Создать ник</button>
+        <button class="btn primary" id="finishAuth">Зарегистрироваться</button>
       </div>
     </div>
 
     <div class="onb-step hidden" id="loginBox">
       <h1>Вход</h1>
-      <p class="hint">Ник и пароль — больше ничего не нужно.</p>
-      <label for="loginNick">Ник</label>
-      <input id="loginNick" maxlength="20" spellcheck="false" autocomplete="username">
+      <p class="hint">Ник, телефон или почта — и пароль.</p>
+      <label for="loginNick">Ник, телефон или почта</label>
+      <input id="loginNick" maxlength="120" spellcheck="false" autocomplete="username">
       <label for="loginPass">Пароль</label>
       <input id="loginPass" type="password" maxlength="64" autocomplete="current-password">
       <div class="err" id="loginError"></div>
@@ -95,9 +99,29 @@
         <button class="btn ghost" id="backToStart">Назад</button>
         <button class="btn primary" id="btnLogin">Войти</button>
       </div>
-      <button class="btn ghost wide ya-btn hidden" id="yaLogin" type="button">
+      <button class="btn ghost wide ya-btn" id="yaLogin" type="button">
         <span class="ya-mark">Я</span> Войти через Яндекс
       </button>
+      <button class="link-btn" id="toReset">забыли пароль?</button>
+      <button class="link-btn" id="toRegister">ещё нет ника — зарегистрироваться</button>
+    </div>
+
+    <div class="onb-step hidden" id="resetBox">
+      <h1>Сброс пароля</h1>
+      <p class="hint" id="resetHint">Введи ник, телефон или почту — пришлём код на привязанную почту.</p>
+      <label for="resetLogin">Ник, телефон или почта</label>
+      <input id="resetLogin" maxlength="120" spellcheck="false">
+      <div class="err" id="resetErr"></div>
+      <button class="btn primary wide" id="btnResetSend">Получить код</button>
+      <div class="hidden" id="resetStep2">
+        <label for="resetCode">Код из письма</label>
+        <input id="resetCode" inputmode="numeric" maxlength="6" placeholder="000000">
+        <label for="resetPass">Новый пароль</label>
+        <input id="resetPass" type="password" maxlength="64" placeholder="минимум 4 символа">
+        <div class="err" id="resetErr2"></div>
+        <button class="btn primary wide" id="btnResetApply">Сменить пароль</button>
+      </div>
+      <button class="link-btn" id="resetBack">назад ко входу</button>
     </div>
 
     <div class="server-note">Сервер: <b id="serverName">—</b></div>
@@ -136,7 +160,12 @@
     </button>
 
     <div class="search">
-      <input id="search" type="search" placeholder="Поиск по чатам" autocomplete="off">
+      <div class="search-row">
+        <input id="search" type="search" placeholder="Поиск по чатам" autocomplete="off">
+        <button class="plus-btn" id="btnNew" title="Новый чат или канал" aria-label="Новый чат или канал">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="tabs">
@@ -228,6 +257,53 @@
       </section>
 
       <section class="card">
+        <div class="group-title">Аккаунт и безопасность</div>
+
+        <div class="row">
+          <div>
+            <div class="t">Почта</div>
+            <div class="d" id="set-email-state">не привязана</div>
+          </div>
+          <button class="btn ghost small" id="btnEmailEdit" type="button">Указать</button>
+        </div>
+        <div class="hidden" id="email-edit">
+          <label for="set-email-in">Адрес почты</label>
+          <input id="set-email-in" type="email" maxlength="120" spellcheck="false" placeholder="name@mail.ru">
+          <div class="err" id="set-email-err"></div>
+          <button class="btn primary wide" id="btnEmailSend" type="button">Отправить код</button>
+          <div class="hidden" id="email-code-wrap">
+            <label for="set-email-code">Код из письма</label>
+            <input id="set-email-code" inputmode="numeric" maxlength="6" placeholder="000000">
+            <button class="btn primary wide" id="btnEmailConfirm" type="button">Подтвердить почту</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="t">Пароль</div>
+            <div class="d" id="set-pass-state">задан</div>
+          </div>
+          <button class="btn ghost small" id="btnPassEdit" type="button">Сменить</button>
+        </div>
+        <div class="hidden" id="pass-edit">
+          <label for="set-old-pass">Текущий пароль</label>
+          <input id="set-old-pass" type="password" maxlength="64" autocomplete="current-password" placeholder="если задан">
+          <label for="set-new-pass">Новый пароль</label>
+          <input id="set-new-pass" type="password" maxlength="64" autocomplete="new-password" placeholder="минимум 4 символа">
+          <div class="err" id="set-pass-err"></div>
+          <button class="btn primary wide" id="btnPassSave" type="button">Сохранить пароль</button>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="t">Яндекс ID</div>
+            <div class="d" id="set-ya-state">не привязан</div>
+          </div>
+          <button class="btn ghost small" id="btnYaLink" type="button">Привязать</button>
+        </div>
+      </section>
+
+      <section class="card">
         <div class="group-title">Кастомизация</div>
 
         <div class="ctl">
@@ -311,6 +387,56 @@
       <span class="hint">Прикс · демо-сборка</span>
       <button class="btn primary" id="btnDone">Готово</button>
     </footer>
+  </div>
+</div>
+
+<div id="newSheet" class="overlay hidden">
+  <div class="sheet">
+    <header class="sheet-head">
+      <div>
+        <div class="sheet-title">Новое</div>
+        <div class="sheet-sub">чат с человеком или свой канал</div>
+      </div>
+      <button class="icon-btn" id="btnNewClose" title="Закрыть" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="seg sheet-seg" id="newSeg">
+      <button class="seg-btn active" data-v="chat" type="button">Чат</button>
+      <button class="seg-btn" data-v="channel" type="button">Канал</button>
+    </div>
+
+    <div class="sheet-body">
+      <section id="newChatPane">
+        <label for="newQuery">Ник или номер телефона</label>
+        <input id="newQuery" spellcheck="false" placeholder="maks или +7 900 000-00-00" autocomplete="off">
+        <div class="err" id="newErr"></div>
+        <button class="btn primary wide" id="btnFind">Найти</button>
+        <div class="found hidden" id="foundCard">
+          <span class="avatar" id="foundAv">?</span>
+          <span class="found-text">
+            <b id="foundName">—</b>
+            <small id="foundNick">@nick</small>
+          </span>
+          <button class="btn ghost small" id="btnStartChat" type="button">Написать</button>
+        </div>
+      </section>
+
+      <section id="newChanPane" class="hidden">
+        <label for="chanTitle">Название канала</label>
+        <input id="chanTitle" maxlength="60" placeholder="Например: Прикс · новости">
+        <label for="chanAbout">Описание</label>
+        <input id="chanAbout" maxlength="200" placeholder="О чём канал — необязательно">
+        <div class="err" id="chanErr"></div>
+        <button class="btn primary wide" id="btnCreateChan">Создать канал</button>
+        <div class="or"><span>или</span></div>
+        <label for="chanJoin">Код-ссылка канала</label>
+        <input id="chanJoin" spellcheck="false" placeholder="c1a2b3c4" autocomplete="off">
+        <div class="err" id="chanJoinErr"></div>
+        <button class="btn ghost wide" id="btnJoinChan">Вступить</button>
+      </section>
+    </div>
   </div>
 </div>
 
