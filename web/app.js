@@ -396,6 +396,10 @@
       }
       if (m.id > state.since) state.since = m.id;
     }
+    if (state.messages.length > 600) {
+      state.messages.sort(function (a, b) { return a.id - b.id; });
+      state.messages = state.messages.slice(-600);
+    }
     return added;
   }
 
@@ -433,7 +437,7 @@
       }
       setConnected(true);
       updateTitle();
-      poll();
+      setTimeout(poll, 900);
     }).catch(function () {
       state.polling = false;
       if (!state.alive) return;
@@ -659,8 +663,11 @@
   function renderMessages() {
     if (!el.messages) return;
     var list = messagesFor(state.chat);
-    var atBottom = el.messages.scrollTop + el.messages.clientHeight >= el.messages.scrollHeight - 40;
-    el.messages.innerHTML = "";
+    var box = el.messages;
+    var prevTop = box.scrollTop;
+    var prevHeight = box.scrollHeight;
+    var atBottom = prevTop + box.clientHeight >= prevHeight - 40;
+    box.innerHTML = "";
 
     for (var i = 0; i < list.length; i++) {
       var m = list[i];
@@ -692,7 +699,12 @@
       el.messages.appendChild(empty);
     }
 
-    if (atBottom) el.messages.scrollTop = el.messages.scrollHeight;
+    if (atBottom) {
+      el.messages.scrollTop = el.messages.scrollHeight;
+    } else {
+      var grown = el.messages.scrollHeight - prevHeight;
+      el.messages.scrollTop = prevTop + (grown > 0 ? grown : 0);
+    }
   }
 
   function setTab(tab) {
@@ -737,13 +749,20 @@
     if (!text) return;
     el.text.value = "";
     api("send", { token: state.token, to: state.chat, text: text }).then(function (res) {
-      if (!res || !res.ok) { toast((res && res.error) || "не отправилось"); return; }
+      if (!res || !res.ok) {
+        if (!el.text.value) el.text.value = text;
+        toast((res && res.error) || "не отправилось");
+        return;
+      }
       if (res.message && addMessages([res.message])) {
         renderMessages();
         renderChatList();
         updateTitle();
       }
-    }).catch(function () { toast("сервер не отвечает"); });
+    }).catch(function () {
+      if (!el.text.value) el.text.value = text;
+      toast("сервер не отвечает");
+    });
   }
 
   function syncProfileUi() {
