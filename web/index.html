@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
@@ -166,6 +166,8 @@
       </div>
     </div>
 
+    <div class="folders" id="folderRow" aria-label="Папки чатов"></div>
+
     <div class="tabs">
       <button class="tab active" id="tabAll">Все</button>
       <button class="tab" id="tabFriends">Друзья</button>
@@ -234,8 +236,13 @@
           <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
           <span>Безопасность</span><span class="chev">›</span>
         </button>
-        <button class="sets-item" data-pane="devices" type="button">
-          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="10" rx="2"/><path d="M6 19h7"/><rect x="17" y="10" width="4" height="9" rx="1.4"/></svg>
+        <button class="sets-item" data-pane="blocked" type="button">
+          <span>Чёрный список</span><span class="chev">›</span>
+        </button>
+        <button class="sets-item" data-pane="folders" type="button">
+          <span>Папки</span><span class="chev">›</span>
+        </button>
+        <button class="sets-item" data-pane="devices" type="button">          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="10" rx="2"/><path d="M6 19h7"/><rect x="17" y="10" width="4" height="9" rx="1.4"/></svg>
           <span>Устройства</span><span class="chev">›</span>
         </button>
         <button class="sets-item" data-pane="look" type="button">
@@ -366,10 +373,57 @@
           </div>
 
           <div class="card">
-            <div class="group-title">Приватность</div>
+            <div class="group-title">Кто что видит</div>
+            <div class="row">
+              <div><div class="t">Статус «в сети»</div><div class="d">Кому показывать, что вы на связи</div></div>
+              <select class="lvl" id="pv-online"><option value="all">все</option><option value="contacts">контакты</option><option value="nobody">никто</option></select>
+            </div>
+            <div class="row">
+              <div><div class="t">Мой номер</div><div class="d">Кому виден номер телефона</div></div>
+              <select class="lvl" id="pv-phone"><option value="all">все</option><option value="contacts">контакты</option><option value="nobody">никто</option></select>
+            </div>
+            <div class="row">
+              <div><div class="t">Найти меня по номеру</div><div class="d">Поиск по номеру в Приксе</div></div>
+              <select class="lvl" id="pv-find"><option value="all">все</option><option value="contacts">контакты</option><option value="nobody">никто</option></select>
+            </div>
+            <div class="row">
+              <div><div class="t">Писать мне первым</div><div class="d">Кто может начать переписку</div></div>
+              <select class="lvl" id="pv-write"><option value="all">все</option><option value="contacts">контакты</option><option value="nobody">никто</option></select>
+            </div>
+            <div class="row">
+              <div><div class="t">Аватар и статус</div><div class="d">Кому видно фото и подпись</div></div>
+              <select class="lvl" id="pv-content"><option value="all">все</option><option value="contacts">контакты</option><option value="nobody">никто</option></select>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="group-title">Собеседники</div>
             <div class="row"><div><div class="t">Скрывать онлайн</div><div class="d">Собеседники не видят статус</div></div><label class="switch"><input type="checkbox" id="pr-hideOnline"><span class="track"><span class="knob"></span></span></label></div>
             <div class="row"><div><div class="t">Только по приглашению</div><div class="d">Новые чаты — с вашего одобрения</div></div><label class="switch"><input type="checkbox" id="pr-inviteOnly"><span class="track"><span class="knob"></span></span></label></div>
             <div class="row"><div><div class="t">Исчезающие сообщения</div><div class="d">24 часа после отправки</div></div><label class="switch"><input type="checkbox" id="pr-vanish"><span class="track"><span class="knob"></span></span></label></div>
+          </div>
+
+          <div class="card">
+            <div class="group-title">Чёрный список</div>
+            <div class="row">
+              <div><div class="t">Заблокированные</div><div class="d" id="blocked-state">никого</div></div>
+              <button class="btn ghost small" id="btnGoBlocked" type="button">Открыть</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="pane" data-pane="blocked">
+          <div class="card">
+            <div class="group-title">Заблокировать</div>
+            <div class="hint">Заблокированный не сможет писать вам и находить по номеру.</div>
+            <label for="block-nick">Ник</label>
+            <input id="block-nick" maxlength="20" spellcheck="false" placeholder="ник собеседника">
+            <div class="err" id="block-err"></div>
+            <button class="btn primary wide" id="btnBlock" type="button">Заблокировать</button>
+          </div>
+          <div class="card">
+            <div class="group-title">В списке</div>
+            <div id="blocked-list" class="blocked-list"></div>
           </div>
         </section>
 
@@ -424,6 +478,28 @@
             <div class="row"><div><div class="t">Компактный режим</div><div class="d">Плотнее список чатов</div></div><label class="switch"><input type="checkbox" id="compact-chk"><span class="track"><span class="knob"></span></span></label></div>
           </div>
           <button class="btn ghost wide" id="reset-btn" type="button">Сбросить настройки</button>
+        </section>
+
+        <section class="pane" data-pane="folders">
+          <div class="card">
+            <div class="group-title">Новая папка</div>
+            <div class="hint">Папка показывает только те чаты, которые вы в неё положите.</div>
+            <label for="folder-title">Название</label>
+            <input id="folder-title" maxlength="24" placeholder="Например: Работа">
+            <div class="err" id="folder-err"></div>
+            <button class="btn primary wide" id="btnFolderCreate" type="button">Создать папку</button>
+          </div>
+
+          <div class="card">
+            <div class="group-title">Мои папки</div>
+            <div id="folder-list" class="folder-list"></div>
+          </div>
+
+          <div class="card hidden" id="folder-edit-card">
+            <div class="group-title" id="folder-edit-title">Состав папки</div>
+            <div id="folder-chats" class="folder-chats"></div>
+            <button class="btn primary wide" id="btnFolderSave" type="button">Сохранить</button>
+          </div>
         </section>
 
         <section class="pane" data-pane="devices">
@@ -509,7 +585,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="config.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="config.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
