@@ -1110,10 +1110,11 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const ext = path.extname(target).toLowerCase();
+    const fresh = ext === ".html" || ext === ".js" || ext === ".css";
     res.writeHead(200, {
       "Content-Type": MIME[ext] || "application/octet-stream",
       "Content-Length": stat.size,
-      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=3600"
+      "Cache-Control": fresh ? "no-cache, must-revalidate" : "public, max-age=3600"
     });
     fs.createReadStream(target).pipe(res);
   });
