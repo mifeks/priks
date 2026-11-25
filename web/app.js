@@ -67,7 +67,7 @@
     alive: false,
     yandexReady: null,
     step: 1,
-    reg: { phone: "", name: "", nick: "", avatar: 1, password: "", email: "" },
+    reg: { phone: "", name: "", nick: "", avatar: 1, password: "", email: "", birth: "" },
     toastTimer: 0
   };
 
@@ -297,6 +297,19 @@
     return digits;
   }
 
+  function checkBirth(value) {
+    var raw = String(value || "").trim();
+    if (!raw) return { ok: false, error: "без даты рождения дальше нельзя — её просит Прикс" };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return { ok: false, error: "нужен вид 2005-05-17" };
+    var ts = Date.parse(raw + "T00:00:00Z");
+    if (!Number.isFinite(ts)) return { ok: false, error: "такой даты не существует" };
+    if (new Date(ts).toISOString().slice(0, 10) !== raw) return { ok: false, error: "такой даты не существует" };
+    var years = (Date.now() - ts) / (365.25 * 24 * 3600 * 1000);
+    if (years < 14) return { ok: false, error: "Прикс — с 14 лет" };
+    if (years > 110) return { ok: false, error: "проверьте год рождения" };
+    return { ok: true, value: raw };
+  }
+
   function phoneNext() {
     var digits = normPhone(el.phone.value);
     if (digits.length < 10) {
@@ -327,23 +340,32 @@
   function finishAuth() {
     var password = el.password.value;
     var email = el.regEmail ? el.regEmail.value.trim() : "";
+    var birth = el.regBirth ? el.regBirth.value : "";
     el.passErr.textContent = "";
     el.userErr.textContent = "";
     el.emailErr.textContent = "";
+    if (el.birthErr) el.birthErr.textContent = "";
     if (password.length < 4) { el.passErr.textContent = "пароль минимум 4 символа"; return; }
+    var birthChecked = checkBirth(birth);
+    if (!birthChecked.ok) {
+      if (el.birthErr) el.birthErr.textContent = birthChecked.error;
+      return;
+    }
     if (email && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) {
       el.emailErr.textContent = "почта выглядит странно — нужен вид name@mail.ru";
       return;
     }
     state.reg.password = password;
     state.reg.email = email;
+    state.reg.birth = birthChecked.value;
     var payload = {
       nick: state.reg.nick,
       password: password,
       displayName: state.reg.name,
       avatar: state.reg.avatar,
       phone: state.reg.phone,
-      email: email
+      email: email,
+      birth: birthChecked.value
     };
     el.finishBtn.disabled = true;
     api("register", payload).then(function (res) {
@@ -426,6 +448,11 @@
     if (p.status) profile.status = p.status;
     if (typeof p.customStatus === "string") profile.custom = p.customStatus;
     if (p.avatar) profile.avatar = p.avatar;
+    if (p.photo !== undefined) profile.photo = p.photo || "";
+    if (p.birth !== undefined) {
+      state.account = state.account || {};
+      state.account.birth = p.birth || "";
+    }
     if (p.hideOnline !== undefined) settings.privacy.hideOnline = !!p.hideOnline;
     if (p.privacy && typeof p.privacy === "object") {
       state.account = state.account || {};
@@ -1133,6 +1160,7 @@
       if (res.users) {
         state.users = res.users;
         renderChatList();
+        refreshChatHead();
       }
       if (res.channels) state.channels = res.channels;
       if (res.groups) state.groups = res.groups;
@@ -1259,6 +1287,7 @@
         nick: found ? found.nick : nick,
         online: found ? !!found.online : false,
         avatar: found ? found.avatar : 1,
+        photo: found ? found.photo || "" : "",
         displayName: found ? (found.displayName || found.nick) : nick,
         last: last[nick],
         preview: preview[nick] || ""
@@ -1272,6 +1301,12 @@
     var av = document.createElement("span");
     av.className = "avatar small" + (cls ? " " + cls : "");
     if (entry.custom) return av;
+    if (entry.photo) {
+      av.style.backgroundImage = "url(" + entry.photo + ")";
+      av.style.backgroundSize = "cover";
+      av.style.backgroundPosition = "center";
+      return av;
+    }
     av.classList.add(entry.cls || avatarClass(entry.avatar));
     av.textContent = (entry.letter || "?").charAt(0).toUpperCase();
     return av;
@@ -1319,8 +1354,15 @@
         var chBtn = document.createElement("button");
         chBtn.className = "chat-item" + (state.chat === chKey ? " active" : "");
         var chAv = document.createElement("span");
-        chAv.className = "avatar small chan";
+        chAv.className = "avatar small chan clickable";
         chAv.textContent = "#";
+        chAv.title = "о канале";
+        chAv.onclick = (function (id) {
+          return function (ev) {
+            ev.stopPropagation();
+            openChannelInfo("ch:" + id);
+          };
+        })(ch.id);
         chBtn.appendChild(chAv);
         var chText = document.createElement("span");
         chText.className = "chat-item-text";
@@ -1368,8 +1410,15 @@
         var gBtn = document.createElement("button");
         gBtn.className = "chat-item" + (state.chat === gKey ? " active" : "");
         var gAv = document.createElement("span");
-        gAv.className = "avatar small grp";
+        gAv.className = "avatar small grp clickable";
         gAv.textContent = gr.title.charAt(0).toUpperCase();
+        gAv.title = "о группе";
+        gAv.onclick = (function (id) {
+          return function (ev) {
+            ev.stopPropagation();
+            openGroupInfo("g:" + id);
+          };
+        })(gr.id);
         gBtn.appendChild(gAv);
         var gText = document.createElement("span");
         gText.className = "chat-item-text";
@@ -1408,7 +1457,16 @@
 
       var item = document.createElement("button");
       item.className = "chat-item" + (u.nick.toLowerCase() === state.chat.toLowerCase() ? " active" : "");
-      item.appendChild(avatarNode({ avatar: u.avatar, letter: label }));
+      var personAv = avatarNode({ avatar: u.avatar, photo: u.photo, letter: label });
+      personAv.classList.add("clickable");
+      personAv.title = "открыть профиль";
+      personAv.onclick = (function (nick) {
+        return function (ev) {
+          ev.stopPropagation();
+          openPerson(nick);
+        };
+      })(u.nick);
+      item.appendChild(personAv);
 
       var text = document.createElement("span");
       text.className = "chat-item-text";
@@ -1466,11 +1524,11 @@
     }
   }
 
-  function openChat(nick) {
-    state.chat = nick || "";
-    state.unread[state.chat.toLowerCase()] = 0;
+  function paintChatHead(nick) {
     var ch = isChannelTarget(nick) ? channelOf(nick) : null;
     var gr = isGroupTarget(nick) ? groupOf(nick) : null;
+    el.chatTitle.textContent = "";
+    el.chatSub.textContent = "";
     if (ch) {
       el.chatTitle.textContent = ch.title;
       if (ch.verified) {
@@ -1483,31 +1541,46 @@
       el.chatAvatar.className = "avatar small chan";
       el.chatAvatar.textContent = "#";
       el.chatAvatar.style.backgroundImage = "";
-    } else if (gr) {
+      el.chatAvatar.style.color = "";
+      return;
+    }
+    if (gr) {
       el.chatTitle.textContent = gr.title;
       el.chatSub.textContent = "группа · " + gr.members + " участн.";
       el.chatAvatar.className = "avatar small grp";
       el.chatAvatar.textContent = gr.title.charAt(0).toUpperCase();
       el.chatAvatar.style.backgroundImage = "";
-    } else {
-      el.chatTitle.textContent = nick ? displayOf(nick) : "Общий чат";
-      el.chatSub.textContent = nick ? "@" + nick : "все пользователи";
-      var peer = nick ? findUser(nick) : null;
-      if (peer && peer.owner) {
-        var own = document.createElement("span");
-        own.className = "owner-badge";
-        own.textContent = "главный админ";
-        el.chatSub.appendChild(own);
-      }
-      var av = el.chatAvatar;
-      if (nick) {
-        av.className = "avatar small " + avatarClass(avatarOf(nick));
-        av.textContent = displayOf(nick).charAt(0).toUpperCase();
-      } else {
-        av.className = "avatar small hash";
-        av.textContent = "#";
-      }
+      el.chatAvatar.style.color = "";
+      return;
     }
+    el.chatTitle.textContent = nick ? displayOf(nick) : "Общий чат";
+    el.chatSub.textContent = nick ? "@" + nick : "все пользователи";
+    var peer = nick ? findUser(nick) : null;
+    if (peer && peer.owner) {
+      var own = document.createElement("span");
+      own.className = "owner-badge";
+      own.textContent = "главный админ";
+      el.chatSub.appendChild(own);
+    }
+    if (nick) {
+      applyAvatar(el.chatAvatar, nick, avatarOf(nick), peer ? peer.photo || "" : "");
+      el.chatAvatar.className += " small";
+    } else {
+      el.chatAvatar.className = "avatar small hash";
+      el.chatAvatar.textContent = "#";
+      el.chatAvatar.style.backgroundImage = "";
+      el.chatAvatar.style.color = "";
+    }
+  }
+
+  function refreshChatHead() {
+    paintChatHead(state.chat || "");
+  }
+
+  function openChat(nick) {
+    state.chat = nick || "";
+    state.unread[state.chat.toLowerCase()] = 0;
+    paintChatHead(state.chat);
     el.app.classList.add("show-chat");
     renderChatList();
     loadHistory(state.chat);
@@ -1547,6 +1620,13 @@
       var meta = document.createElement("div");
       meta.className = "msg-meta";
       meta.textContent = isMine(m) ? "ты" : displayOf(m.from);
+      if (!isMine(m)) {
+        meta.classList.add("clickable");
+        meta.title = "открыть профиль";
+        meta.onclick = (function (nick) {
+          return function () { openPerson(nick); };
+        })(m.from);
+      }
       wrap.appendChild(meta);
 
       var body = document.createElement("div");
@@ -1925,35 +2005,340 @@
     });
   }
 
+  function saveAvatarChoice(value) {
+    profile.avatar = value;
+    profile.photo = "";
+    saveProfile();
+    markAvatarPicks();
+    if (state.alive) syncProfileUi();
+    if (!state.token) return;
+    api("profile", { token: state.token, avatar: value, photo: "" }).then(function (res) {
+      if (res && res.ok) {
+        if (res.profile) mergeProfile(res.profile);
+      } else {
+        toast((res && res.error) || "аватар не сохранился");
+      }
+    }).catch(function () { toast("нет связи — аватар сохранён только на этом устройстве"); });
+  }
+
+  function uploadAvatar(file) {
+    if (!file) return;
+    if (!/^image\//.test(String(file.type || ""))) { toast("это не картинка"); return; }
+    toast("сохраняю фото профиля…");
+    resizeImage(file, 512).then(function (payload) {
+      return api("upload", { token: state.token, type: payload.type, image: payload.data });
+    }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "фото не загрузилось"); return null; }
+      return api("profile", { token: state.token, photo: res.url });
+    }).then(function (res) {
+      if (!res) return;
+      if (!res.ok) { toast((res && res.error) || "фото не сохранилось"); return; }
+      if (res.profile) mergeProfile(res.profile);
+      toast("фото профиля обновлено");
+    }).catch(function () { toast("не удалось сохранить фото"); });
+  }
+
   function wireAvatarPick(boxId) {
     var box = $(boxId);
     if (!box) return;
     var picks = box.querySelectorAll(".pick[data-av]");
     for (var i = 0; i < picks.length; i++) {
       picks[i].addEventListener("click", function () {
-        var value = parseInt(this.getAttribute("data-av"), 10);
-        profile.avatar = value;
-        profile.photo = "";
-        saveProfile();
-        markAvatarPicks();
-        if (state.alive) syncProfileUi();
-        else markAvatarPicks();
+        saveAvatarChoice(parseInt(this.getAttribute("data-av"), 10));
       });
     }
     var file = box.querySelector("input[type=file]");
     if (file) {
       file.addEventListener("change", function () {
         var f = this.files && this.files[0];
+        this.value = "";
         if (!f) return;
-        var reader = new FileReader();
-        reader.onload = function () {
-          profile.photo = String(reader.result);
-          saveProfile();
-          if (state.alive) syncProfileUi();
-        };
-        reader.readAsDataURL(f);
+        if (!state.token) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            profile.photo = String(reader.result);
+            saveProfile();
+            markAvatarPicks();
+          };
+          reader.readAsDataURL(f);
+          return;
+        }
+        uploadAvatar(f);
       });
     }
+  }
+
+  function mkNode(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+
+  function infoRow(label, value) {
+    var row = mkNode("div", "info-row");
+    row.appendChild(mkNode("span", "", label));
+    row.appendChild(mkNode("b", "", value));
+    return row;
+  }
+
+  function isFriendNick(nick) {
+    var want = String(nick || "").toLowerCase();
+    var list = state.friends || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && String(list[i].nick || "").toLowerCase() === want) return true;
+    }
+    return false;
+  }
+
+  function isBlockedNick(nick) {
+    var want = String(nick || "").toLowerCase();
+    var list = (state.account && state.account.blocked) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i]).toLowerCase() === want) return true;
+    }
+    return false;
+  }
+
+  function personState(u) {
+    if (u.online) return "в сети";
+    if (u.status === "dnd") return "не беспокоить";
+    if (u.customStatus) return u.customStatus;
+    return "не в сети";
+  }
+
+  function closeInfo() {
+    if (el.infoSheet) el.infoSheet.classList.add("hidden");
+  }
+
+  function openInfo(title, sub) {
+    if (!el.infoSheet) return null;
+    $("infoTitle").textContent = title;
+    $("infoSub").textContent = sub || "";
+    el.infoBody.innerHTML = "";
+    el.infoSheet.classList.remove("hidden");
+    return el.infoBody;
+  }
+
+  function blockFromCard(nick) {
+    api("block", { token: state.token, nick: nick }).then(function (res) {
+      if (res && res.ok) {
+        state.account = state.account || {};
+        state.account.blocked = res.blocked || [];
+        syncBlockedUi();
+        toast("Заблокирован @" + nick);
+      } else {
+        toast((res && res.error) || "не получилось");
+      }
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function openPerson(nick) {
+    if (!nick) return;
+    if (String(nick).toLowerCase() === String(state.nick || "").toLowerCase()) {
+      openSettings("profile");
+      return;
+    }
+    var u = findUser(nick) || { nick: nick, avatar: 1 };
+    var body = openInfo("О человеке", "профиль · @" + (u.nick || nick));
+    if (!body) return;
+    loadFriends();
+
+    var hero = mkNode("div", "info-hero");
+    var av = mkNode("span", "avatar xl");
+    applyAvatar(av, u.nick, u.avatar || 1, u.photo || "");
+    hero.appendChild(av);
+    var head = mkNode("div", "info-head");
+    var name = mkNode("div", "info-name", u.displayName || u.nick);
+    if (u.owner) name.appendChild(mkNode("span", "owner-badge", "главный админ"));
+    head.appendChild(name);
+    head.appendChild(mkNode("div", "info-nick", "@" + u.nick));
+    head.appendChild(mkNode("div", "info-state" + (u.online ? " on" : ""), personState(u)));
+    hero.appendChild(head);
+    body.appendChild(hero);
+
+    body.appendChild(mkNode("div", "info-bio" + (u.bio ? "" : " quiet"), u.bio || "Подписи пока нет"));
+
+    var acts = mkNode("div", "info-actions");
+    var write = mkNode("button", "btn primary small", "Написать");
+    write.type = "button";
+    write.onclick = function () { closeInfo(); openChat(u.nick); };
+    acts.appendChild(write);
+
+    var friend = mkNode("button", "btn ghost small", isFriendNick(u.nick) ? "Убрать из друзей" : "В друзья");
+    friend.type = "button";
+    friend.onclick = function () {
+      closeInfo();
+      if (isFriendNick(u.nick)) removeFriend(u.nick);
+      else addFriend(u.nick);
+    };
+    acts.appendChild(friend);
+
+    var blocked = isBlockedNick(u.nick);
+    var blockBtn = mkNode("button", "btn ghost small", blocked ? "Разблокировать" : "Заблокировать");
+    blockBtn.type = "button";
+    blockBtn.onclick = function () {
+      closeInfo();
+      if (blocked) unblockNick(u.nick);
+      else blockFromCard(u.nick);
+    };
+    acts.appendChild(blockBtn);
+    body.appendChild(acts);
+
+    var rows = mkNode("div", "info-rows");
+    rows.appendChild(infoRow("ник", "@" + u.nick));
+    if (u.phone) rows.appendChild(infoRow("телефон", "+" + u.phone));
+    rows.appendChild(infoRow("аватар", u.photo ? "фото профиля" : "цвет " + (u.avatar || 1)));
+    body.appendChild(rows);
+  }
+
+  function openChannelInfo(target) {
+    var ch = channelOf(target);
+    if (!ch) return;
+    var body = openInfo("О канале", "канал · " + ch.members + " участн.");
+    if (!body) return;
+
+    var hero = mkNode("div", "info-hero");
+    var av = mkNode("span", "avatar xl chan", "#");
+    hero.appendChild(av);
+    var head = mkNode("div", "info-head");
+    var name = mkNode("div", "info-name", ch.title);
+    if (ch.verified) name.appendChild(mkNode("span", "verif", "✓"));
+    head.appendChild(name);
+    head.appendChild(mkNode("div", "info-nick", "канал · " + ch.members + " участн."));
+    head.appendChild(mkNode("div", "info-state", ch.mine ? "твой канал" : ch.joined ? "ты подписан" : "не подписан"));
+    hero.appendChild(head);
+    body.appendChild(hero);
+
+    body.appendChild(mkNode("div", "info-bio" + (ch.about ? "" : " quiet"), ch.about || "Описание не задано"));
+
+    var acts = mkNode("div", "info-actions");
+    var open = mkNode("button", "btn primary small", "Открыть канал");
+    open.type = "button";
+    open.onclick = function () { closeInfo(); openChat("ch:" + ch.id); };
+    acts.appendChild(open);
+
+    if (!ch.joined) {
+      var join = mkNode("button", "btn ghost small", "Подписаться");
+      join.type = "button";
+      join.onclick = function () {
+        api("channel-join", { token: state.token, id: ch.id }).then(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+          state.channels = res.channels || state.channels;
+          closeInfo();
+          renderChatList();
+          paintChatHead(state.chat);
+          toast("подписались на " + ch.title);
+        }).catch(function () { toast("нет связи"); });
+      };
+      acts.appendChild(join);
+    } else {
+      var leave = mkNode("button", "btn ghost small", ch.mine ? "Удалить канал" : "Отписаться");
+      leave.type = "button";
+      leave.onclick = function () {
+        var act = ch.mine ? "channel-delete" : "channel-leave";
+        api(act, { token: state.token, id: ch.id }).then(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+          if (state.chat === "ch:" + ch.id) { state.chat = ""; openChat(""); }
+          closeInfo();
+          loadChannels();
+          toast(ch.mine ? "канал удалён" : "отписались от " + ch.title);
+        }).catch(function () { toast("нет связи"); });
+      };
+      acts.appendChild(leave);
+    }
+
+    if (state.me && (state.me.owner || state.me.admin)) {
+      var verify = mkNode("button", "btn ghost small", ch.verified ? "Снять проверку" : "Проверить канал");
+      verify.type = "button";
+      verify.onclick = function () {
+        api("channel-verify", { token: state.token, id: ch.id, verified: !ch.verified }).then(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+          state.channels = res.channels || state.channels;
+          loadChannels();
+          openChannelInfo("ch:" + ch.id);
+          toast(ch.verified ? "проверка снята" : "канал проверен");
+        }).catch(function () { toast("нет связи"); });
+      };
+      acts.appendChild(verify);
+    }
+    body.appendChild(acts);
+
+    var rows = mkNode("div", "info-rows");
+    rows.appendChild(infoRow("код канала", ch.id));
+    rows.appendChild(infoRow("владелец", "@" + (ch.owner || "—")));
+    rows.appendChild(infoRow("проверен", ch.verified ? "да, владельцем Прикса" : "нет"));
+    body.appendChild(rows);
+  }
+
+  function openGroupInfo(target) {
+    var gr = groupOf(target);
+    if (!gr) return;
+    var body = openInfo("О группе", "группа · " + gr.members + " участн.");
+    if (!body) return;
+
+    var hero = mkNode("div", "info-hero");
+    var av = mkNode("span", "avatar xl grp", String(gr.title).charAt(0).toUpperCase());
+    hero.appendChild(av);
+    var head = mkNode("div", "info-head");
+    head.appendChild(mkNode("div", "info-name", gr.title));
+    head.appendChild(mkNode("div", "info-nick", "группа · " + gr.members + " участн."));
+    head.appendChild(mkNode("div", "info-state", gr.mine ? "твоя группа" : "ты в группе"));
+    hero.appendChild(head);
+    body.appendChild(hero);
+
+    var acts = mkNode("div", "info-actions");
+    var open = mkNode("button", "btn primary small", "Открыть группу");
+    open.type = "button";
+    open.onclick = function () { closeInfo(); openChat("g:" + gr.id); };
+    acts.appendChild(open);
+    var leave = mkNode("button", "btn ghost small", gr.mine ? "Удалить группу" : "Выйти из группы");
+    leave.type = "button";
+    leave.onclick = function () {
+      var act = gr.mine ? "group-delete" : "group-leave";
+      api(act, { token: state.token, id: gr.id }).then(function (res) {
+        if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+        if (state.chat === "g:" + gr.id) { state.chat = ""; openChat(""); }
+        closeInfo();
+        loadGroups();
+        toast(gr.mine ? "группа удалена" : "вышли из группы");
+      }).catch(function () { toast("нет связи"); });
+    };
+    acts.appendChild(leave);
+    body.appendChild(acts);
+
+    var people = gr.people || [];
+    if (people.length) {
+      var block = mkNode("div", "info-rows");
+      block.appendChild(mkNode("div", "group-title", "Участники"));
+      var list = mkNode("div", "info-people");
+      for (var i = 0; i < people.length; i++) {
+        (function (person) {
+          var row = mkNode("button", "info-person");
+          row.type = "button";
+          var pav = mkNode("span", "avatar small");
+          applyAvatar(pav, person.nick, person.avatar || 1, person.photo || "");
+          row.appendChild(pav);
+          var txt = mkNode("span", "found-text");
+          txt.appendChild(mkNode("div", "t", person.displayName || person.nick));
+          var sub = "@" + person.nick + (person.owner ? " · главный админ" : "");
+          txt.appendChild(mkNode("div", "d", sub));
+          row.appendChild(txt);
+          row.onclick = function () { openPerson(person.nick); };
+          list.appendChild(row);
+        })(people[i]);
+      }
+      block.appendChild(list);
+      body.appendChild(block);
+    }
+  }
+
+  function openChatInfo() {
+    var c = state.chat;
+    if (!c) { toast("общий чат — тут все"); return; }
+    if (isChannelTarget(c)) openChannelInfo(c);
+    else if (isGroupTarget(c)) openGroupInfo(c);
+    else openPerson(c);
   }
 
   function loadChannels() {
@@ -2118,7 +2503,7 @@
       state.found = res.user;
       el.foundName.textContent = res.user.displayName || res.user.nick;
       el.foundNick.textContent = "@" + res.user.nick + " · " + (res.user.online ? "в сети" : "не в сети");
-      applyAvatar(el.foundAv, res.user.nick, res.user.avatar, "");
+      applyAvatar(el.foundAv, res.user.nick, res.user.avatar, res.user.photo || "");
       el.foundCard.classList.remove("hidden");
     }).catch(function () {
       el.btnFind.disabled = false;
@@ -2194,6 +2579,14 @@
     el.nickErr = $("nick-err");
     el.password = $("password");
     el.passErr = $("pass-err");
+    el.regBirth = $("reg-birth");
+    el.birthErr = $("birth-err");
+    if (el.regBirth) {
+      var birthLimit = new Date();
+      birthLimit.setFullYear(birthLimit.getFullYear() - 14);
+      el.regBirth.max = birthLimit.toISOString().slice(0, 10);
+      el.regBirth.min = "1900-01-01";
+    }
     el.regEmail = $("reg-email");
     el.emailErr = $("email-err");
     el.finishBtn = $("finishAuth");
@@ -2259,6 +2652,8 @@
     el.toast = $("toast");
 
     el.newSheet = $("newSheet");
+    el.infoSheet = $("infoSheet");
+    el.infoBody = $("infoBody");
     el.newSeg = $("newSeg");
     el.newQuery = $("newQuery");
     el.newErr = $("newErr");
@@ -2458,6 +2853,17 @@
     }
     $("btnNewClose").addEventListener("click", closeNewSheet);
     el.newSheet.addEventListener("click", function (e) { if (e.target === el.newSheet) closeNewSheet(); });
+    if ($("btnInfoClose")) $("btnInfoClose").addEventListener("click", closeInfo);
+    if (el.infoSheet) el.infoSheet.addEventListener("click", function (e) { if (e.target === el.infoSheet) closeInfo(); });
+    if (el.chatAvatar) {
+      el.chatAvatar.classList.add("clickable");
+      el.chatAvatar.title = "открыть карточку";
+      el.chatAvatar.addEventListener("click", openChatInfo);
+    }
+    if (el.chatTitle) {
+      el.chatTitle.classList.add("clickable");
+      el.chatTitle.addEventListener("click", openChatInfo);
+    }
     var newBtns = el.newSeg.querySelectorAll(".seg-btn");
     for (var nb = 0; nb < newBtns.length; nb++) {
       newBtns[nb].addEventListener("click", function () { setNewTab(this.getAttribute("data-v")); });
