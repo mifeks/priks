@@ -20,6 +20,12 @@ const ADMIN_NICKS = String(process.env.ADMIN_NICKS || "")
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+const OWNER_NICKS = String(process.env.OWNER_NICKS || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+const FILES_DIR = path.join(DATA_DIR, "files");
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "465", 10) || 465;
@@ -88,6 +94,7 @@ const MIME = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
+  ".gif": "image/gif",
   ".ico": "image/x-icon",
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8"
@@ -98,8 +105,10 @@ let store = {
   tokens: {},
   friends: {},
   bans: {},
+  blocks: {},
   channels: {},
   channelMembers: {},
+  groups: {},
   messages: [],
   nextId: 1
 };
@@ -117,7 +126,9 @@ function loadStore() {
     store.tokens = parsed.tokens || {};
     store.friends = parsed.friends || {};
     store.bans = parsed.bans && typeof parsed.bans === "object" ? parsed.bans : {};
+    store.blocks = parsed.blocks && typeof parsed.blocks === "object" ? parsed.blocks : {};
     store.channels = parsed.channels && typeof parsed.channels === "object" ? parsed.channels : {};
+    store.groups = parsed.groups && typeof parsed.groups === "object" ? parsed.groups : {};
     store.channelMembers = parsed.channelMembers && typeof parsed.channelMembers === "object" ? parsed.channelMembers : {};
     store.messages = Array.isArray(parsed.messages) ? parsed.messages : [];
     store.nextId = parsed.nextId || (store.messages.length ? store.messages[store.messages.length - 1].id + 1 : 1);
@@ -246,6 +257,7 @@ function publicChannel(ch, myKey) {
     members: members.length,
     joined: myKey ? members.indexOf(myKey) >= 0 : false,
     mine: myKey ? ch.owner === myKey : false,
+    verified: !!ch.verified,
     created: ch.created || 0
   };
 }
@@ -266,6 +278,8 @@ function selfProfileOf(user) {
   base.email = user.email || "";
   base.emailVerified = !!user.emailVerified;
   base.hasPassword = !!user.hash;
+  base.privacy = privacyOf(user);
+  base.blocked = blockListOf(user.nick.toLowerCase(), "");
   return base;
 }
 
@@ -296,11 +310,128 @@ function isOnline(user) {
   return Date.now() - (user.lastSeen || 0) < ONLINE_WINDOW_MS;
 }
 
+function imageRefOf(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.indexOf("/files/") !== 0) return "";
+  const name = raw.slice(7);
+  if (!/^[a-z0-9]+\.[a-z]{2,5}$/i.test(name)) return "";
+  return fs.existsSync(path.join(FILES_DIR, name)) ? raw : "";
+}
+
+const PRIVACY_LEVELS = ["all", "contacts", "nobody"];
+const PRIVACY_DEFAULTS = { online: "all", phone: "nobody", find: "all", write: "all", content: "all" };
+
+function privacyOf(user) {
+  const raw = user && user.privacy && typeof user.privacy === "object" ? user.privacy : {};
+  const out = {};
+  for (const k of Object.keys(PRIVACY_DEFAULTS)) {
+    out[k] = PRIVACY_LEVELS.indexOf(raw[k]) >= 0 ? raw[k] : PRIVACY_DEFAULTS[k];
+  }
+  return out;
+}
+
+function isContact(aKey, bKey) {
+  if (!aKey || !bKey) return false;
+  if (aKey === bKey) return true;
+  const mine = store.friends[aKey] || [];
+  if (mine.some((n) => String(n).toLowerCase() === bKey)) return true;
+  const back = store.friends[bKey] || [];
+  return back.some((n) => String(n).toLowerCase() === aKey);
+}
+
+function allowedBy(level, ownerKey, viewerKey) {
+  if (!ownerKey) return true;
+  if (viewerKey && ownerKey === viewerKey) return true;
+  if (level === "all") return true;
+  if (!viewerKey) return false;
+  if (level === "contacts") return isContact(ownerKey, viewerKey);
+  return false;
+}
+
+function blocksOf(key) {
+  const list = store.blocks[key];
+  return Array.isArray(list) ? list : [];
+}
+
+function isBlockedBy(ownerKey, viewerKey) {
+  if (!ownerKey || !viewerKey) return false;
+  return blocksOf(ownerKey).some((n) => String(n).toLowerCase() === viewerKey);
+}
+
+function blockListOf(ownerKey, viewerKey) {
+  const out = [];
+  for (const nick of blocksOf(ownerKey)) {
+    if (viewerKey && String(nick).toLowerCase() === viewerKey) continue;
+    const user = store.users[String(nick).toLowerCase()];
+    out.push({ nick: user ? user.nick : String(nick), exists: !!user });
+  }
+  return out;
+}
+
+
 function isAdminKey(key) {
   if (!key) return false;
   if (ADMIN_NICKS.indexOf(key) >= 0) return true;
   const user = store.users[key];
   return !!(user && user.admin);
+}
+
+function isOwnerKey(key) {
+  if (!key) return false;
+  if (OWNER_NICKS.indexOf(key) >= 0) return true;
+  const user = store.users[key];
+  return !!(user && user.owner);
+}
+
+function groupOf(id) {
+  const g = store.groups[String(id || "")];
+  return g || null;
+}
+
+function groupMembersOf(id) {
+  const g = groupOf(id);
+  return g && Array.isArray(g.members) ? g.members : [];
+}
+
+function isGroupMember(id, key) {
+  return groupMembersOf(id).indexOf(key) >= 0;
+}
+
+function groupIdOfTarget(to) {
+  const raw = String(to || "");
+  if (raw.indexOf("g:") !== 0) return "";
+  const id = raw.slice(2).trim();
+  return groupOf(id) ? id : "";
+}
+
+function publicGroup(g, myKey) {
+  const members = groupMembersOf(g.id);
+  const out = {
+    id: g.id,
+    title: g.title,
+    owner: g.owner,
+    members: members.length,
+    joined: myKey ? members.indexOf(myKey) >= 0 : false,
+    mine: myKey ? g.owner === myKey : false,
+    created: g.created || 0,
+    people: []
+  };
+  for (const key of members) {
+    const user = store.users[key];
+    if (!user) continue;
+    out.people.push({ nick: user.nick, displayName: user.displayName || user.nick, avatar: user.avatar || 1, owner: isOwnerKey(key) });
+  }
+  return out;
+}
+
+function myGroups(key) {
+  const out = [];
+  for (const id of Object.keys(store.groups)) {
+    if (!isGroupMember(id, key)) continue;
+    out.push(publicGroup(store.groups[id], key));
+  }
+  out.sort((a, b) => (b.created || 0) - (a.created || 0));
+  return out;
 }
 
 function banOf(key) {
@@ -342,6 +473,7 @@ function floodCheck(key) {
 }
 
 function profileOf(user) {
+  const key = String(user.nick || "").toLowerCase();
   return {
     nick: user.nick,
     displayName: user.displayName || user.nick,
@@ -349,21 +481,31 @@ function profileOf(user) {
     customStatus: user.customStatus || "",
     avatar: user.avatar || 1,
     hideOnline: !!user.hideOnline,
-    oauth: user.oauth || ""
+    oauth: user.oauth || "",
+    bio: user.bio || "",
+    owner: isOwnerKey(key),
+    admin: isAdminKey(key)
   };
 }
 
-function publicUsers() {
+function publicUsers(viewerKey) {
   const out = [];
   for (const key of Object.keys(store.users)) {
     const user = store.users[key];
+    const priv = privacyOf(user);
+    const seeOnline = allowedBy(priv.online, key, viewerKey) && !user.hideOnline;
+    const seeContent = allowedBy(priv.content, key, viewerKey);
     out.push({
       nick: user.nick,
       displayName: user.displayName || user.nick,
-      avatar: user.avatar || 0,
-      status: user.status || "on",
-      customStatus: user.customStatus || "",
-      online: user.hideOnline ? false : isOnline(user)
+      avatar: seeContent ? user.avatar || 0 : 0,
+      status: seeContent ? user.status || "on" : "on",
+      customStatus: seeContent ? user.customStatus || "" : "",
+      online: seeOnline && isOnline(user),
+      phone: allowedBy(priv.phone, key, viewerKey) ? user.phone || "" : "",
+      owner: isOwnerKey(key),
+      admin: isAdminKey(key),
+      blocked: isBlockedBy(viewerKey, key)
     });
   }
   out.sort((a, b) => a.nick.localeCompare(b.nick));
@@ -578,6 +720,7 @@ function handleApi(action, body) {
       status: "on",
       customStatus: "",
       hideOnline: false,
+      privacy: Object.assign({}, PRIVACY_DEFAULTS),
       phone: phone,
       email: email,
       emailVerified: false,
@@ -600,17 +743,24 @@ function handleApi(action, body) {
     if (!key) return fail("ник или номер не найден");
     if (banOf(key)) return fail("этот пользователь заблокирован");
     const user = store.users[key];
+    const viewerSession = userOf(data.token);
+    const viewerKey = viewerSession ? viewerSession.key : "";
+    const priv = privacyOf(user);
+    const byPhone = !!phoneKeyOf(query) && !store.users[query.toLowerCase()];
+    if (byPhone && !allowedBy(priv.find, key, viewerKey)) return fail("ник или номер не найден");
+    if (isBlockedBy(key, viewerKey)) return fail("ник или номер не найден");
+    const seeContent = allowedBy(priv.content, key, viewerKey);
     return {
       ok: true,
       found: true,
       user: {
         nick: user.nick,
-        displayName: user.displayName || user.nick,
-        avatar: user.avatar || 1,
-        status: user.status || "on",
-        customStatus: user.customStatus || "",
-        online: user.hideOnline ? false : isOnline(user),
-        byPhone: !!phoneKeyOf(query)
+        displayName: seeContent ? user.displayName || user.nick : user.nick,
+        avatar: seeContent ? user.avatar || 1 : 0,
+        status: seeContent ? user.status || "on" : "on",
+        customStatus: seeContent ? user.customStatus || "" : "",
+        online: allowedBy(priv.online, key, viewerKey) && !user.hideOnline && isOnline(user),
+        byPhone: byPhone
       }
     };
   }
@@ -684,18 +834,32 @@ function handleApi(action, body) {
   if (action === "send") {
     const to = normalizeNick(data.to);
     const text = String(data.text || "").trim();
-    if (!text) return fail("пустое сообщение");
+    const img = imageRefOf(data.img);
+    if (!text && !img) return fail("пустое сообщение");
     if (text.length > MAX_MESSAGE) return fail("слишком длинное сообщение");
     let target = "";
     const chId = channelIdOfTarget(to);
+    const grId = groupIdOfTarget(to);
     if (to.indexOf("ch:") === 0) {
       if (!chId) return fail("канал не найден");
       if (!isChannelMember(chId, session.key)) return fail("сначала вступи в канал");
       target = "ch:" + chId;
+    } else if (to.indexOf("g:") === 0) {
+      if (!grId) return fail("группа не найдена");
+      if (!isGroupMember(grId, session.key)) return fail("вы не в этой группе");
+      target = "g:" + grId;
     } else if (to) {
       const peer = store.users[to.toLowerCase()];
       if (!peer) return fail("нет такого пользователя");
       if (to.toLowerCase() === session.key) return fail("нельзя писать самому себе");
+      if (blocksOf(to.toLowerCase()).some((n) => String(n).toLowerCase() === session.key)) {
+        return fail("получатель ограничил приём сообщений");
+      }
+      const peerPriv = privacyOf(peer);
+      const started = messagesFor(session.key, peer.nick).length > 0;
+      if (!started && !allowedBy(peerPriv.write, to.toLowerCase(), session.key)) {
+        return fail("этот пользователь принимает сообщения только от контактов");
+      }
       target = peer.nick;
     }
     const flood = floodCheck(session.key);
@@ -707,6 +871,7 @@ function handleApi(action, body) {
       text: text,
       ts: Date.now()
     };
+    if (img) message.img = img;
     store.messages.push(message);
     if (store.messages.length > 20000) store.messages = store.messages.slice(-15000);
     saveStore();
@@ -776,27 +941,49 @@ function handleApi(action, body) {
     const joined = Object.keys(store.channels).filter((id) => isChannelMember(id, session.key));
     const joinedSet = {};
     for (const id of joined) joinedSet["ch:" + id] = true;
+    for (const id of Object.keys(store.groups)) {
+      if (isGroupMember(id, session.key)) joinedSet["g:" + id] = true;
+    }
+    const blockedSet = {};
+    for (const nick of blocksOf(session.key)) blockedSet[String(nick).toLowerCase()] = true;
     const fresh = store.messages.filter((m) => m.id > since);
     const visible = fresh.filter((m) => {
-      if (m.to && String(m.to).indexOf("ch:") === 0) return !!joinedSet[String(m.to)];
+      const addr = String(m.to || "");
+      if (addr.indexOf("ch:") === 0) return !!joinedSet[addr];
+      if (addr.indexOf("g:") === 0) return !!joinedSet[addr];
       if (!m.to) return true;
+      if (blockedSet[m.from.toLowerCase()]) return false;
       return m.to.toLowerCase() === session.key || m.from.toLowerCase() === session.key;
     });
-    return { ok: true, messages: visible, users: publicUsers(), channels: myChannels(session.key), time: Date.now() };
+    return {
+      ok: true,
+      messages: visible,
+      users: publicUsers(session.key),
+      channels: myChannels(session.key),
+      groups: myGroups(session.key),
+      time: Date.now()
+    };
   }
 
   if (action === "history") {
     const limit = Math.min(Number(data.limit) || 200, 500);
     const withRaw = String(data.with == null ? "" : data.with).trim();
     const chId = channelIdOfTarget(withRaw);
+    const grId = groupIdOfTarget(withRaw);
     if (withRaw.indexOf("ch:") === 0) {
       if (!chId) return fail("канал не найден");
       if (!isChannelMember(chId, session.key)) return fail("сначала вступи в канал");
       const list = store.messages.filter((m) => String(m.to || "") === "ch:" + chId);
-      return { ok: true, messages: list.slice(-limit), users: publicUsers(), channels: myChannels(session.key) };
+      return { ok: true, messages: list.slice(-limit), users: publicUsers(session.key), channels: myChannels(session.key), groups: myGroups(session.key) };
+    }
+    if (withRaw.indexOf("g:") === 0) {
+      if (!grId) return fail("группа не найдена");
+      if (!isGroupMember(grId, session.key)) return fail("вы не в этой группе");
+      const list = store.messages.filter((m) => String(m.to || "") === "g:" + grId);
+      return { ok: true, messages: list.slice(-limit), users: publicUsers(session.key), channels: myChannels(session.key), groups: myGroups(session.key) };
     }
     const list = messagesFor(session.key, withRaw);
-    return { ok: true, messages: list.slice(-limit), users: publicUsers(), channels: myChannels(session.key) };
+    return { ok: true, messages: list.slice(-limit), users: publicUsers(session.key), channels: myChannels(session.key), groups: myGroups(session.key) };
   }
 
 
@@ -908,6 +1095,7 @@ function handleApi(action, body) {
       user.avatar = Number.isFinite(av) && av >= 0 && av <= 6 ? av : 0;
     }
     if (data.hideOnline !== undefined) user.hideOnline = !!data.hideOnline;
+    if (data.bio !== undefined) user.bio = String(data.bio || "").trim().slice(0, 140);
     if (data.phone !== undefined) {
       const asked = String(data.phone || "").trim();
       const phone = phoneKeyOf(asked);
@@ -923,6 +1111,194 @@ function handleApi(action, body) {
     saveStore();
     return { ok: true, profile: selfProfileOf(user) };
 
+  }
+
+  if (action === "privacy") {
+    const priv = privacyOf(session.user);
+    if (data.privacy && typeof data.privacy === "object") {
+      for (const k of Object.keys(PRIVACY_DEFAULTS)) {
+        const value = data.privacy[k];
+        if (value === undefined) continue;
+        if (PRIVACY_LEVELS.indexOf(value) < 0) return fail("неизвестный уровень доступа: " + String(value));
+        priv[k] = value;
+      }
+      session.user.privacy = priv;
+      saveStore();
+      log("приватность: " + session.nick + " " + JSON.stringify(priv));
+    }
+    return { ok: true, privacy: priv, profile: selfProfileOf(session.user) };
+  }
+
+  if (action === "blocks") {
+    return { ok: true, blocked: blockListOf(session.key, "") };
+  }
+
+  if (action === "block") {
+    const nick = normalizeNick(data.nick);
+    const key = nick.toLowerCase();
+    if (!key) return fail("укажите ник");
+    if (key === session.key) return fail("себя заблокировать нельзя");
+    const target = store.users[key];
+    if (!target) return fail("нет такого пользователя");
+    const list = blocksOf(session.key).filter((n) => String(n).toLowerCase() !== key);
+    list.push(target.nick);
+    store.blocks[session.key] = list;
+    saveStore();
+    log("чёрный список: " + session.nick + " заблокировал " + target.nick);
+    return { ok: true, blocked: blockListOf(session.key, ""), nick: target.nick };
+  }
+
+  if (action === "unblock") {
+    const nick = normalizeNick(data.nick).toLowerCase();
+    if (!nick) return fail("укажите ник");
+    store.blocks[session.key] = blocksOf(session.key).filter((n) => String(n).toLowerCase() !== nick);
+    saveStore();
+    log("чёрный список: " + session.nick + " разблокировал " + nick);
+    return { ok: true, blocked: blockListOf(session.key, ""), nick: nick };
+  }
+
+  if (action === "upload") {
+    const kind = String(data.type || "jpeg").toLowerCase().replace(/^image\//, "");
+    const ext = kind === "png" ? "png" : kind === "webp" ? "webp" : kind === "gif" ? "gif" : "jpg";
+    const raw = String(data.image || "");
+    if (!raw) return fail("нет картинки");
+    let buf;
+    try { buf = Buffer.from(raw, "base64"); } catch (e) { return fail("битая картинка"); }
+    if (!buf.length) return fail("пустая картинка");
+    if (buf.length > MAX_IMAGE_BYTES) return fail("картинка больше 4 МБ");
+    if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
+    const name = crypto.randomBytes(8).toString("hex") + "." + ext;
+    fs.writeFileSync(path.join(FILES_DIR, name), buf);
+    log("файл: " + name + " (" + Math.round(buf.length / 1024) + " КБ) от " + session.nick);
+    return { ok: true, url: "/files/" + name, size: buf.length };
+  }
+
+  if (action === "groups") {
+    return { ok: true, groups: myGroups(session.key) };
+  }
+
+  if (action === "group-create") {
+    const title = String(data.title || "").trim().slice(0, 60);
+    if (title.length < 2) return fail("название группы: минимум 2 символа");
+    const members = [session.key];
+    const asked = Array.isArray(data.members) ? data.members : [];
+    for (const raw of asked) {
+      const nick = normalizeNick(raw);
+      const key = nick.toLowerCase();
+      if (!key || key === session.key) continue;
+      if (!store.users[key]) return fail("нет такого пользователя: " + nick);
+      if (members.indexOf(key) < 0) members.push(key);
+    }
+    let id = "g" + crypto.randomBytes(4).toString("hex");
+    while (store.groups[id]) id = "g" + crypto.randomBytes(4).toString("hex");
+    store.groups[id] = {
+      id: id,
+      title: title,
+      owner: session.key,
+      members: members,
+      created: Date.now()
+    };
+    saveStore();
+    log("группа создана: " + title + " (" + id + ", участников " + members.length + ") от " + session.nick);
+    return { ok: true, group: publicGroup(store.groups[id], session.key), groups: myGroups(session.key) };
+  }
+
+  if (action === "group-add") {
+    const id = String(data.id || "").trim();
+    const g = groupOf(id);
+    if (!g) return fail("группа не найдена");
+    if (!isGroupMember(id, session.key)) return fail("вы не в этой группе");
+    const nick = normalizeNick(data.nick);
+    const key = nick.toLowerCase();
+    const target = store.users[key];
+    if (!target) return fail("нет такого пользователя");
+    if (!Array.isArray(g.members)) g.members = [];
+    if (g.members.indexOf(key) < 0) {
+      g.members.push(key);
+      saveStore();
+      log("группа " + id + ": добавлен " + target.nick);
+    }
+    return { ok: true, group: publicGroup(g, session.key), groups: myGroups(session.key) };
+  }
+
+  if (action === "group-remove") {
+    const id = String(data.id || "").trim();
+    const g = groupOf(id);
+    if (!g) return fail("группа не найдена");
+    const nick = normalizeNick(data.nick).toLowerCase();
+    const allowed = g.owner === session.key || isOwnerKey(session.key) || nick === session.key;
+    if (!allowed) return fail("удалять участников может только владелец группы");
+    g.members = groupMembersOf(id).filter((k) => k !== nick);
+    saveStore();
+    log("группа " + id + ": удалён " + nick);
+    return { ok: true, group: publicGroup(g, session.key), groups: myGroups(session.key) };
+  }
+
+  if (action === "group-leave") {
+    const id = String(data.id || "").trim();
+    const g = groupOf(id);
+    if (!g) return fail("группа не найдена");
+    g.members = groupMembersOf(id).filter((k) => k !== session.key);
+    if (!g.members.length) delete store.groups[id];
+    else if (g.owner === session.key) g.owner = g.members[0];
+    saveStore();
+    return { ok: true, groups: myGroups(session.key) };
+  }
+
+  if (action === "group-delete") {
+    const id = String(data.id || "").trim();
+    const g = groupOf(id);
+    if (!g) return fail("группа не найдена");
+    if (g.owner !== session.key && !isOwnerKey(session.key) && !isAdminKey(session.key)) {
+      return fail("удалять группу может только её владелец");
+    }
+    delete store.groups[id];
+    store.messages = store.messages.filter((m) => String(m.to || "") !== "g:" + id);
+    saveStore();
+    log("группа удалена: " + id);
+    return { ok: true, groups: myGroups(session.key) };
+  }
+
+  if (action === "channels-all") {
+    if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("доступно только владельцу");
+    const out = [];
+    for (const id of Object.keys(store.channels)) out.push(publicChannel(store.channels[id], session.key));
+    out.sort((a, b) => (b.created || 0) - (a.created || 0));
+    return { ok: true, channels: out };
+  }
+
+  if (action === "channel-verify") {
+    if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("верифицировать каналы может только владелец");
+    const id = String(data.id || "").trim();
+    const ch = channelOf(id);
+    if (!ch) return fail("канал не найден");
+    ch.verified = data.verified === false ? false : true;
+    ch.verifiedBy = ch.verified ? session.nick : "";
+    ch.verifiedTs = ch.verified ? Date.now() : 0;
+    saveStore();
+    log("канал " + id + (ch.verified ? " верифицирован" : " лишён верификации") + " — " + session.nick);
+    return { ok: true, channel: publicChannel(ch, session.key), channels: myChannels(session.key) };
+  }
+
+  if (action === "logout-all") {
+    let dropped = 0;
+    for (const token of Object.keys(store.tokens)) {
+      if (String(store.tokens[token]).toLowerCase() !== session.key) continue;
+      if (token === data.token) continue;
+      delete store.tokens[token];
+      dropped++;
+    }
+    saveStore();
+    log("сессии: " + session.nick + " завершил " + dropped + " других сессий");
+    return { ok: true, dropped: dropped };
+  }
+
+  if (action === "sessions") {
+    let count = 0;
+    for (const token of Object.keys(store.tokens)) {
+      if (String(store.tokens[token]).toLowerCase() === session.key) count++;
+    }
+    return { ok: true, sessions: count };
   }
 
   return fail("неизвестное действие: " + action);
@@ -1063,6 +1439,7 @@ async function handleYandexCallback(req, res, url) {
         status: "on",
         customStatus: "",
         hideOnline: false,
+      privacy: Object.assign({}, PRIVACY_DEFAULTS),
         oauth: "yandex",
         yandexId: yandexId,
         yandexLogin: String(info.login || ""),
@@ -1092,6 +1469,29 @@ async function handleYandexCallback(req, res, url) {
     log("яндекс: ошибка входа: " + err.stack);
     return back("не получилось войти через Яндекс");
   }
+}
+
+function serveFile(req, res, pathname) {
+  const name = decodeURIComponent(pathname.replace(/^\/files\//, ""));
+  if (!/^[a-z0-9]+\.[a-z]{2,5}$/i.test(name)) {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("bad name");
+    return;
+  }
+  const target = path.join(FILES_DIR, name);
+  fs.stat(target, (err, stat) => {
+    if (err || !stat.isFile()) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("404");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": MIME[path.extname(name).toLowerCase()] || "application/octet-stream",
+      "Content-Length": stat.size,
+      "Cache-Control": "public, max-age=31536000, immutable"
+    });
+    fs.createReadStream(target).pipe(res);
+  });
 }
 
 function serveStatic(req, res, pathname) {
@@ -1188,7 +1588,8 @@ const server = http.createServer((req, res) => {
       sendJson(res, 405, fail("только POST"));
       return;
     }
-    readBody(req, 256 * 1024, (err, text) => {
+    const isUpload = pathname === "/api/upload";
+    readBody(req, isUpload ? 8 * 1024 * 1024 : 256 * 1024, (err, text) => {
       if (err) { sendJson(res, 413, fail(err.message)); return; }
       let body = {};
       if (text) {
@@ -1203,6 +1604,11 @@ const server = http.createServer((req, res) => {
           sendJson(res, 200, fail("внутренняя ошибка сервера"));
         });
     });
+    return;
+  }
+
+  if (pathname.startsWith("/files/")) {
+    serveFile(req, res, pathname);
     return;
   }
 
