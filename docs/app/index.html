@@ -25,13 +25,12 @@
     <div class="dots" id="onbDots"><i class="on"></i><i></i><i></i></div>
 
     <div class="onb-step hidden" id="srvBox">
-      <h1>Адрес сервера</h1>
-      <p class="hint">Куда подключаться? Адрес своего сервера Прикса — клиент его запомнит.</p>
-      <label for="srvAddr">Сервер</label>
-      <input id="srvAddr" spellcheck="false" autocomplete="url" placeholder="http://89.169.0.10:8777">
+      <h1>Подключение</h1>
+      <p class="hint">Вставьте адрес, который вам дали вместе с доступом.</p>
+      <label for="srvAddr">Адрес</label>
+      <input id="srvAddr" spellcheck="false" autocomplete="url" placeholder="https://…">
       <div class="err" id="srvErr"></div>
       <button class="btn primary wide" id="srvConnect">Подключиться</button>
-      <button class="link-btn" id="srvLocal">свой компьютер — 127.0.0.1:8777</button>
     </div>
 
     <div class="onb-step" id="p1">
@@ -124,7 +123,6 @@
       <button class="link-btn" id="resetBack">назад ко входу</button>
     </div>
 
-    <div class="server-note">Сервер: <b id="serverName">—</b></div>
   </div>
 </section>
 
@@ -432,7 +430,6 @@
           <div class="card">
             <div class="group-title">Это устройство</div>
             <div class="row"><div><div class="t">Браузер</div><div class="d" id="devBrowser">—</div></div></div>
-            <div class="row"><div><div class="t">Сервер</div><div class="d" id="devServer">—</div></div></div>
             <div class="row"><div><div class="t">Аккаунт</div><div class="d" id="devNick">—</div></div></div>
           </div>
           <button class="btn ghost wide" id="btnLogout2" type="button">Выйти из аккаунта</button>
@@ -452,7 +449,6 @@
           <div class="card">
             <div class="group-title">Прикс</div>
             <div class="row"><div><div class="t">Версия</div><div class="d">веб-клиент 1.7</div></div></div>
-            <div class="row"><div><div class="t">Сервер</div><div class="d" id="devServer2">—</div></div></div>
             <div class="row"><div><div class="t">Сайт</div><div class="d">mifeks.github.io</div></div></div>
           </div>
         </section>
