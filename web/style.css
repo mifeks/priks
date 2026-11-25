@@ -77,6 +77,21 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .btn.small { padding: 7px 13px; font-size: .88rem; }
 .btn.wide { width: 100%; justify-content: center; display: flex; }
 
+.ya-btn { margin-top: 12px; gap: 9px; align-items: center; }
+.ya-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #fc3f1d;
+  color: #fff;
+  font-weight: 800;
+  font-size: .78rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
 .icon-btn {
   display: grid;
   place-items: center;
@@ -275,6 +290,14 @@ input:disabled { opacity: .6; cursor: not-allowed; }
   background: var(--accent); color: var(--accent-contrast);
   font-size: .72rem; font-weight: 700; display: grid; place-items: center;
 }
+.chat-item-del {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  color: var(--muted); font-size: 1rem; line-height: 1; opacity: 0;
+  transition: background .15s ease, color .15s ease, opacity .15s ease;
+}
+.chat-item:hover .chat-item-del, .chat-item-del:focus-visible { opacity: 1; }
+.chat-item-del:hover { background: var(--danger, #d9534f); color: #fff; }
+@media (hover: none) { .chat-item-del { opacity: .6; } }
 .app.compact .chat-item { padding: 6px 10px; gap: 8px; }
 .app.compact .avatar.small { width: 30px; height: 30px; font-size: .78rem; }
 .app.compact .chat-item-last { display: none; }
