@@ -156,6 +156,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .onb-row .btn:only-child { grid-column: 1 / -1; }
 
 label { display: block; font-size: .82rem; font-weight: 500; color: var(--muted); margin: 12px 0 6px; }
+label .opt { font-weight: 400; opacity: .8; }
 input:not([type="checkbox"]):not([type="range"]):not([type="file"]) {
   width: 100%;
   font: inherit;
@@ -263,6 +264,44 @@ input:disabled { opacity: .6; cursor: not-allowed; }
 .me-status { font-size: .78rem; color: var(--muted); }
 
 .search { padding: 12px 14px 6px; }
+.search-row { display: flex; align-items: center; gap: 8px; }
+.search-row input { flex: 1; }
+.plus-btn {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition: filter .15s ease, transform .15s ease;
+}
+.plus-btn:hover { filter: brightness(1.08); }
+.plus-btn:active { transform: translateY(1px); }
+.plus-btn svg { width: 22px; height: 22px; stroke-width: 2; }
+
+.avatar.chan { background: var(--accent); color: var(--accent-contrast); }
+
+.sheet-seg { margin: 14px 20px 0; }
+.found {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.found-text { display: grid; flex: 1; min-width: 0; }
+.found-text b { font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.found-text small { color: var(--muted); font-size: .78rem; }
+
+.or { display: flex; align-items: center; gap: 10px; margin: 18px 0 6px; color: var(--muted); font-size: .82rem; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .tabs { display: flex; gap: 6px; padding: 6px 14px 8px; }
 .tab {
   font: inherit; font-size: .84rem; font-weight: 600; color: var(--muted);
