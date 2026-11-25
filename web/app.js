@@ -3,6 +3,47 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  var API_BASE = resolveApiBase();
+
+  function normalizeBase(v) {
+    var s = String(v || "").trim();
+    if (!s) return "";
+    if (!/^https?:\/\//i.test(s)) s = "http://" + s;
+    return s.replace(/\/+$/, "");
+  }
+
+  function resolveApiBase() {
+    var fromQuery = "";
+    try {
+      fromQuery = new URLSearchParams(location.search).get("api") || "";
+    } catch (e) { }
+    if (fromQuery) {
+      var q = normalizeBase(fromQuery);
+      try { localStorage.setItem("priks.api", q); } catch (e) { }
+      return q;
+    }
+    var saved = "";
+    try { saved = localStorage.getItem("priks.api") || ""; } catch (e) { }
+    if (saved) return normalizeBase(saved);
+    if (typeof window.PRIKS_API === "string" && window.PRIKS_API) return normalizeBase(window.PRIKS_API);
+    return "";
+  }
+
+  function apiPath(action) {
+    return (API_BASE || "") + "/api/" + action;
+  }
+
+  function statusPath() {
+    return (API_BASE || "") + "/auth/status";
+  }
+
+  function needsServerPicker() {
+    if (API_BASE) return false;
+    if (location.protocol === "file:") return true;
+    var h = String(location.hostname || "");
+    return /(^|\.)github\.io$/.test(h) || h === "";
+  }
+
   var el = {};
   var state = {
     nick: "",
@@ -149,7 +190,7 @@
   }
 
   function api(action, data) {
-    return fetch("/api/" + action, {
+    return fetch(apiPath(action), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data || {})
@@ -206,11 +247,17 @@
 
   function showStep(step) {
     state.step = step;
-    ["p1", "p2", "p3", "loginBox"].forEach(function (id) { $(id).classList.add("hidden"); });
+    ["p1", "p2", "p3", "loginBox", "srvBox"].forEach(function (id) { $(id).classList.add("hidden"); });
     if (step === "login") {
       $("loginBox").classList.remove("hidden");
       $("onbStep").textContent = "вход";
       ["", "", ""].forEach(function () { });
+      setDots(0);
+      return;
+    }
+    if (step === "srv") {
+      $("srvBox").classList.remove("hidden");
+      $("onbStep").textContent = "сервер";
       setDots(0);
       return;
     }
@@ -533,6 +580,8 @@
       var count = state.unread[u.nick.toLowerCase()] || 0;
       if (count > 0) last.textContent = count + " новых";
       else if (u.preview) last.textContent = u.preview;
+      else if (u.status === "dnd") last.textContent = "не беспокоить";
+      else if (u.customStatus) last.textContent = u.customStatus;
       else last.textContent = u.online ? "в сети" : "не в сети";
       text.appendChild(name);
       text.appendChild(last);
@@ -543,6 +592,20 @@
         badge.className = "chat-item-badge";
         badge.textContent = count;
         item.appendChild(badge);
+      }
+
+      if (state.tab === "friends") {
+        var del = document.createElement("span");
+        del.className = "chat-item-del";
+        del.title = "Убрать из друзей";
+        del.textContent = "×";
+        del.onclick = (function (nick) {
+          return function (ev) {
+            ev.stopPropagation();
+            removeFriend(nick);
+          };
+        })(u.nick);
+        item.appendChild(del);
       }
 
       item.onclick = (function (nick) {
@@ -656,6 +719,15 @@
       el.search.value = "";
       state.query = "";
       toast("в друзьях: " + nick);
+      loadFriends();
+    }).catch(function () { toast("сервер не отвечает"); });
+  }
+
+  function removeFriend(nick) {
+    if (!nick) return;
+    api("friend-remove", { token: state.token, nick: nick }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+      toast("убрали из друзей: " + nick);
       loadFriends();
     }).catch(function () { toast("сервер не отвечает"); });
   }
@@ -925,6 +997,23 @@
     $("backToStart").addEventListener("click", function () { showStep(1); });
     $("btnLogin").addEventListener("click", doLogin);
     el.loginPass.addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+    $("yaStart").addEventListener("click", startYandex);
+    $("yaLogin").addEventListener("click", startYandex);
+    $("srvConnect").addEventListener("click", connectServer);
+    $("srvAddr").addEventListener("keydown", function (e) { if (e.key === "Enter") connectServer(); });
+    $("srvLocal").addEventListener("click", function () {
+      el.srvAddr.value = "http://127.0.0.1:8777";
+      connectServer();
+    });
+    checkYandex();
+
+    if (wantsYandexLogin()) {
+      clearQueryFlag();
+      if (needsServerPicker()) showStep("srv");
+      else startYandex();
+    } else if (needsServerPicker()) {
+      showStep("srv");
+    }
 
     $("railChats").addEventListener("click", function () {
       el.app.classList.remove("show-chat");
@@ -1116,6 +1205,7 @@
       nick = localStorage.getItem("priks.nick");
       token = localStorage.getItem("priks.token");
     } catch (e) { }
+    if (fromYandex()) return;
     if (nick && token) {
       api("whoami", { token: token }).then(function (res) {
         if (res && res.ok) {
@@ -1126,6 +1216,78 @@
         }
       }).catch(function () { });
     }
+  }
+
+  function wantsYandexLogin() {
+    try { return new URLSearchParams(location.search).get("yandex") === "1"; } catch (e) { return false; }
+  }
+
+  function clearQueryFlag() {
+    try { history.replaceState(null, "", location.pathname); } catch (e) { }
+  }
+
+  function connectServer() {
+    var raw = $("srvAddr").value;
+    var base = normalizeBase(raw);
+    if (!base) { $("srvErr").textContent = "введите адрес сервера"; return; }
+    $("srvErr").textContent = "";
+    $("srvConnect").disabled = true;
+    $("srvConnect").textContent = "проверяю…";
+    fetch(base + "/auth/status").then(function (r) { return r.json(); }).then(function (res) {
+      if (!res || res.ok !== true) throw new Error("bad");
+      try { localStorage.setItem("priks.api", base); } catch (e) { }
+      location.reload();
+    }).catch(function () {
+      $("srvConnect").disabled = false;
+      $("srvConnect").textContent = "Подключиться";
+      $("srvErr").textContent = "сервер не ответил — проверьте адрес и порт";
+    });
+  }
+
+  function startYandex() {
+    if (API_BASE) {
+      location.href = API_BASE + "/auth/yandex?return=" + encodeURIComponent(location.origin + location.pathname);
+      return;
+    }
+    location.href = "/auth/yandex";
+  }
+
+  function checkYandex() {
+    api("auth-status", {}).then(function (res) {
+      if (!res || !res.yandex) return;
+      $("yaStart").classList.remove("hidden");
+      $("yaLogin").classList.remove("hidden");
+    }).catch(function () { });
+  }
+
+  function fromYandex() {
+    var raw = String(location.hash || "").replace(/^#/, "");
+    if (!raw) return false;
+    var params = new URLSearchParams(raw);
+    var token = params.get("auth");
+    var err = params.get("auth_error");
+    if (!token && !err) return false;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { location.hash = ""; }
+    if (err) {
+      showStep("login");
+      el.loginError.textContent = err;
+      return true;
+    }
+    state.alive = false;
+    api("whoami", { token: token }).then(function (res) {
+      if (!res || !res.ok) {
+        showStep("login");
+        el.loginError.textContent = (res && res.error) || "не получилось войти через Яндекс";
+        return;
+      }
+      if (res.profile) mergeProfile(res.profile);
+      enter(res.nick, token);
+      toast("вход через Яндекс: " + res.nick);
+    }).catch(function () {
+      showStep("login");
+      el.loginError.textContent = "сервер не отвечает";
+    });
+    return true;
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
