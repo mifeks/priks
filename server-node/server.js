@@ -4,6 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const smtp = require("./smtp");
 
 const PORT = parseInt(process.env.PORT || "8777", 10);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -19,6 +20,17 @@ const ADMIN_NICKS = String(process.env.ADMIN_NICKS || "")
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+
+const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || "465", 10) || 465;
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "1") !== "0";
+const SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || "");
+const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER).trim();
+const SMTP_INSECURE_TLS = String(process.env.SMTP_INSECURE_TLS || "") === "1";
+const MAIL_ENABLED = !!(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const CODE_TTL_MS = 15 * 60 * 1000;
+const CODE_MAX_TRIES = 6;
 
 const YANDEX_CLIENT_ID = String(process.env.YANDEX_CLIENT_ID || "").trim();
 const YANDEX_CLIENT_SECRET = String(process.env.YANDEX_CLIENT_SECRET || "").trim();
@@ -86,6 +98,8 @@ let store = {
   tokens: {},
   friends: {},
   bans: {},
+  channels: {},
+  channelMembers: {},
   messages: [],
   nextId: 1
 };
@@ -103,6 +117,8 @@ function loadStore() {
     store.tokens = parsed.tokens || {};
     store.friends = parsed.friends || {};
     store.bans = parsed.bans && typeof parsed.bans === "object" ? parsed.bans : {};
+    store.channels = parsed.channels && typeof parsed.channels === "object" ? parsed.channels : {};
+    store.channelMembers = parsed.channelMembers && typeof parsed.channelMembers === "object" ? parsed.channelMembers : {};
     store.messages = Array.isArray(parsed.messages) ? parsed.messages : [];
     store.nextId = parsed.nextId || (store.messages.length ? store.messages[store.messages.length - 1].id + 1 : 1);
     log("загружено: пользователей " + Object.keys(store.users).length + ", сообщений " + store.messages.length + ", банов " + Object.keys(store.bans).length);
@@ -137,6 +153,120 @@ function normalizeNick(value) {
 
 function validNick(nick) {
   return /^[A-Za-z0-9_.-]{2,20}$/.test(nick);
+}
+
+function phoneKeyOf(value) {
+  let digits = String(value == null ? "" : value).replace(/\D/g, "");
+  if (digits.length === 11 && digits.charAt(0) === "8") digits = "7" + digits.slice(1);
+  if (digits.length === 11 && digits.charAt(0) === "7") digits = digits.slice(1);
+  if (digits.length < 10) return "";
+  return digits.slice(-10);
+}
+
+function validEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (email.length < 5 || email.length > 120) return "";
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)) return "";
+  return email;
+}
+
+function makeCode() {
+  return String(crypto.randomInt(100000, 999999));
+}
+
+function hashCode(code, salt) {
+  return crypto.createHash("sha256").update("code:" + salt + ":" + code, "utf8").digest("hex");
+}
+
+function userByPhone(phone) {
+  const key = phoneKeyOf(phone);
+  if (!key) return null;
+  for (const k of Object.keys(store.users)) {
+    if (String(store.users[k].phone || "") === key) return k;
+  }
+  return null;
+}
+
+function userByEmail(email) {
+  const mail = validEmail(email);
+  if (!mail) return null;
+  for (const k of Object.keys(store.users)) {
+    if (String(store.users[k].email || "") === mail) return k;
+  }
+  return null;
+}
+
+function findKeyByLogin(query) {
+  const raw = String(query == null ? "" : query).trim();
+  if (!raw) return null;
+  if (raw.indexOf("@") > 0) {
+    const byMail = userByEmail(raw);
+    if (byMail) return byMail;
+  }
+  const key = raw.toLowerCase();
+  if (store.users[key]) return key;
+  const byPhone = userByPhone(raw);
+  if (byPhone) return byPhone;
+  return null;
+}
+
+function emailTaken(email, exceptKey) {
+  const key = userByEmail(email);
+  return !!(key && key !== exceptKey && store.users[key].emailVerified);
+}
+
+function channelMembersOf(id) {
+  const list = store.channelMembers[id];
+  return Array.isArray(list) ? list : [];
+}
+
+function isChannelMember(id, key) {
+  return channelMembersOf(id).indexOf(key) >= 0;
+}
+
+function channelOf(id) {
+  const ch = store.channels[String(id || "")];
+  return ch || null;
+}
+
+function channelIdOfTarget(to) {
+  const raw = String(to || "");
+  if (raw.indexOf("ch:") !== 0) return "";
+  const id = raw.slice(3).trim();
+  return store.channels[id] ? id : "";
+}
+
+function publicChannel(ch, myKey) {
+  const members = channelMembersOf(ch.id);
+  return {
+    id: ch.id,
+    title: ch.title,
+    about: ch.about || "",
+    owner: ch.owner,
+    members: members.length,
+    joined: myKey ? members.indexOf(myKey) >= 0 : false,
+    mine: myKey ? ch.owner === myKey : false,
+    created: ch.created || 0
+  };
+}
+
+function myChannels(key) {
+  const out = [];
+  for (const id of Object.keys(store.channels)) {
+    if (!isChannelMember(id, key)) continue;
+    out.push(publicChannel(store.channels[id], key));
+  }
+  out.sort((a, b) => (b.created || 0) - (a.created || 0));
+  return out;
+}
+
+function selfProfileOf(user) {
+  const base = profileOf(user);
+  base.phone = user.phone || "";
+  base.email = user.email || "";
+  base.emailVerified = !!user.emailVerified;
+  base.hasPassword = !!user.hash;
+  return base;
 }
 
 function hashPassword(password, salt) {
@@ -259,6 +389,164 @@ function fail(message) {
   return { ok: false, error: message };
 }
 
+function maskEmail(email) {
+  const raw = String(email || "");
+  const at = raw.indexOf("@");
+  if (at < 1) return raw;
+  const name = raw.slice(0, at);
+  const domain = raw.slice(at);
+  const head = name.slice(0, 1);
+  return head + new Array(Math.max(2, Math.min(6, name.length))).join("*") + domain;
+}
+
+async function sendCodeMail(to, subject, code) {
+  if (!MAIL_ENABLED) return { sent: false, reason: "почта не настроена на сервере" };
+  const text = [
+    subject,
+    "",
+    "Код: " + code,
+    "",
+    "Код действует 15 минут и подходит только один раз.",
+    "Если вы ничего не запрашивали — просто проигнорируйте это письмо.",
+    "",
+    "Прикс — мессенджер"
+  ].join("\r\n");
+  try {
+    await smtp.sendMail({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      insecureTLS: SMTP_INSECURE_TLS,
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+      from: SMTP_FROM,
+      fromName: "Прикс",
+      to: to,
+      subject: subject,
+      text: text
+    });
+    log("письмо отправлено: " + maskEmail(to) + " (" + subject + ")");
+    return { sent: true, reason: "" };
+  } catch (err) {
+    log("письмо не ушло: " + err.message);
+    return { sent: false, reason: err.message };
+  }
+}
+
+function codeReply(mail, email, code) {
+  const payload = {
+    ok: true,
+    sent: !!mail.sent,
+    email: maskEmail(email),
+    code: ""
+  };
+  if (!mail.sent) {
+    payload.code = code;
+    payload.hint = "Почта на сервере не настроена — код показан прямо здесь (демо-режим).";
+  }
+  return payload;
+}
+
+async function requestPasswordReset(data) {
+  const login = String(data.login == null ? "" : data.login).trim();
+  if (!login) return fail("введите ник, номер или почту");
+  const key = findKeyByLogin(login);
+  if (!key) return fail("аккаунт не найден");
+  const user = store.users[key];
+  if (banOf(key)) return fail("аккаунт заблокирован");
+  if (!user.email || !user.emailVerified) {
+    return fail("к этому аккаунту не привязана подтверждённая почта");
+  }
+  const code = makeCode();
+  user.resetCode = hashCode(code, key + ":reset");
+  user.resetCodeTs = Date.now();
+  user.resetTries = 0;
+  saveStore();
+  const mail = await sendCodeMail(user.email, "Прикс: восстановление пароля", code);
+  log("сброс пароля запрошен: " + user.nick);
+  return codeReply(mail, user.email, code);
+}
+
+function applyPasswordReset(data) {
+  const login = String(data.login == null ? "" : data.login).trim();
+  const code = String(data.code || "").trim();
+  const password = String(data.password || "");
+  if (!login) return fail("введите ник, номер или почту");
+  if (password.length < 4) return fail("пароль минимум 4 символа");
+  const key = findKeyByLogin(login);
+  if (!key) return fail("аккаунт не найден");
+  const user = store.users[key];
+  if (!user.resetCode || !user.resetCodeTs) return fail("код не запрашивали — нажми «Забыли пароль?»");
+  if (Date.now() - user.resetCodeTs > CODE_TTL_MS) {
+    user.resetCode = "";
+    user.resetCodeTs = 0;
+    saveStore();
+    return fail("код устарел, запросите новый");
+  }
+  if ((user.resetTries || 0) >= CODE_MAX_TRIES) return fail("слишком много попыток — запросите новый код");
+  if (hashCode(code, key + ":reset") !== user.resetCode) {
+    user.resetTries = (user.resetTries || 0) + 1;
+    saveStore();
+    return fail("код неверный");
+  }
+  const salt = crypto.randomBytes(12).toString("hex");
+  user.salt = salt;
+  user.hash = hashPassword(password, salt);
+  user.resetCode = "";
+  user.resetCodeTs = 0;
+  user.resetTries = 0;
+  dropSessions(key);
+  saveStore();
+  log("пароль сброшен: " + user.nick);
+  return { ok: true, nick: user.nick };
+}
+
+async function requestEmailCode(session, data) {
+  const email = validEmail(data.email);
+  if (!email) return fail("похоже, это не почта — нужен вид name@mail.ru");
+  if (emailTaken(email, session.key)) return fail("эта почта уже привязана к другому нику");
+  const user = session.user;
+  const code = makeCode();
+  user.emailPending = email;
+  user.emailCode = hashCode(code, session.key + ":email");
+  user.emailCodeTs = Date.now();
+  user.emailTries = 0;
+  saveStore();
+  const mail = await sendCodeMail(email, "Прикс: подтверждение почты", code);
+  log("запрошено подтверждение почты: " + user.nick + " -> " + maskEmail(email));
+  const payload = codeReply(mail, email, code);
+  payload.profile = selfProfileOf(user);
+  return payload;
+}
+
+function verifyEmailCode(session, data) {
+  const code = String(data.code || "").trim();
+  const user = session.user;
+  if (!user.emailPending || !user.emailCodeTs) return fail("сначала укажи почту и запроси код");
+  if (Date.now() - user.emailCodeTs > CODE_TTL_MS) {
+    user.emailCode = "";
+    user.emailCodeTs = 0;
+    saveStore();
+    return fail("код устарел, запросите новый");
+  }
+  if ((user.emailTries || 0) >= CODE_MAX_TRIES) return fail("слишком много попыток — запросите новый код");
+  if (hashCode(code, session.key + ":email") !== user.emailCode) {
+    user.emailTries = (user.emailTries || 0) + 1;
+    saveStore();
+    return fail("код неверный");
+  }
+  user.email = user.emailPending;
+  user.emailVerified = true;
+  user.emailPending = "";
+  user.emailCode = "";
+  user.emailCodeTs = 0;
+  user.emailTries = 0;
+  saveStore();
+  log("почта подтверждена: " + user.nick + " -> " + maskEmail(user.email));
+  return { ok: true, profile: selfProfileOf(user) };
+}
+
+
 function handleApi(action, body) {
   const data = body && typeof body === "object" ? body : {};
 
@@ -273,6 +561,13 @@ function handleApi(action, body) {
     if (password.length < 4) return fail("пароль минимум 4 символа");
     const key = nick.toLowerCase();
     if (store.users[key]) return fail("этот ник уже занят");
+    const phone = phoneKeyOf(data.phone);
+    if (phone) {
+      const busy = userByPhone(phone);
+      if (busy) return fail("этот номер уже занят другим ником");
+    }
+    const email = validEmail(data.email);
+    if (email && emailTaken(email, key)) return fail("эта почта уже привязана к другому нику");
     const salt = crypto.randomBytes(12).toString("hex");
     const displayName = String(data.displayName || "").trim().slice(0, 40) || nick;
     const avatar = parseInt(data.avatar, 10);
@@ -283,6 +578,9 @@ function handleApi(action, body) {
       status: "on",
       customStatus: "",
       hideOnline: false,
+      phone: phone,
+      email: email,
+      emailVerified: false,
       salt: salt,
       hash: hashPassword(password, salt),
       created: Date.now(),
@@ -291,32 +589,96 @@ function handleApi(action, body) {
     const token = newToken();
     store.tokens[token] = nick;
     saveStore();
-    log("регистрация: " + nick);
-    return { ok: true, nick: nick, token: token, profile: profileOf(store.users[key]), admin: isAdminKey(key) };
+    log("регистрация: " + nick + (phone ? " (телефон " + phone + ")" : ""));
+    return { ok: true, nick: nick, token: token, profile: selfProfileOf(store.users[key]), admin: isAdminKey(key) };
+  }
+
+  if (action === "lookup") {
+    const query = String(data.query == null ? "" : data.query).trim();
+    if (!query) return fail("введите ник или номер");
+    const key = findKeyByLogin(query);
+    if (!key) return fail("ник или номер не найден");
+    if (banOf(key)) return fail("этот пользователь заблокирован");
+    const user = store.users[key];
+    return {
+      ok: true,
+      found: true,
+      user: {
+        nick: user.nick,
+        displayName: user.displayName || user.nick,
+        avatar: user.avatar || 1,
+        status: user.status || "on",
+        customStatus: user.customStatus || "",
+        online: user.hideOnline ? false : isOnline(user),
+        byPhone: !!phoneKeyOf(query)
+      }
+    };
   }
 
   if (action === "login") {
-    const nick = normalizeNick(data.nick);
+    const raw = String(data.nick == null ? "" : data.nick).trim();
     const password = String(data.password || "");
-    const user = store.users[nick.toLowerCase()];
-    if (!user) return fail("нет такого ника");
-    const ban = banOf(nick.toLowerCase());
+    const key = raw.indexOf("@") > 0 ? userByEmail(raw) : (store.users[raw.toLowerCase()] ? raw.toLowerCase() : userByPhone(raw));
+    if (!key) return fail("нет такого ника");
+    const user = store.users[key];
+    const ban = banOf(key);
     if (ban) return fail(banText(ban));
-    if (user.oauth === "yandex") return fail("этот ник входит через Яндекс — нажми «Войти через Яндекс»");
+    if (!user.hash) return fail("этот ник входит через Яндекс — нажми «Войти через Яндекс»");
     if (hashPassword(password, user.salt) !== user.hash) return fail("неверный пароль");
     const token = newToken();
     store.tokens[token] = user.nick;
     user.lastSeen = Date.now();
     saveStore();
     log("вход: " + user.nick);
-    return { ok: true, nick: user.nick, token: token, profile: profileOf(user), admin: isAdminKey(nick.toLowerCase()) };
+    return { ok: true, nick: user.nick, token: token, profile: selfProfileOf(user), admin: isAdminKey(key) };
+  }
+
+  if (action === "password-reset-request") {
+    return requestPasswordReset(data);
+  }
+
+  if (action === "password-reset") {
+    return applyPasswordReset(data);
   }
 
   const session = userOf(data.token);
   if (!session) return fail("сессия истекла, войди заново");
 
   if (action === "whoami") {
-    return { ok: true, nick: session.nick, profile: profileOf(session.user) };
+    return { ok: true, nick: session.nick, profile: selfProfileOf(session.user), admin: isAdminKey(session.key) };
+  }
+
+  if (action === "email-request") {
+    return requestEmailCode(session, data);
+  }
+
+  if (action === "email-verify") {
+    return verifyEmailCode(session, data);
+  }
+
+  if (action === "email-remove") {
+    session.user.email = "";
+    session.user.emailVerified = false;
+    session.user.emailPending = "";
+    session.user.emailCode = "";
+    session.user.emailCodeTs = 0;
+    saveStore();
+    return { ok: true, profile: selfProfileOf(session.user) };
+  }
+
+  if (action === "password-change") {
+    const oldPass = String(data.oldPassword || "");
+    const newPass = String(data.password || "");
+    if (newPass.length < 4) return fail("новый пароль минимум 4 символа");
+    if (session.user.hash && hashPassword(oldPass, session.user.salt) !== session.user.hash) {
+      return fail("текущий пароль неверный");
+    }
+    const salt = crypto.randomBytes(12).toString("hex");
+    session.user.salt = salt;
+    session.user.hash = hashPassword(newPass, salt);
+    saveStore();
+    log("пароль изменён: " + session.user.nick);
+    return { ok: true, profile: selfProfileOf(session.user) };
   }
 
   if (action === "send") {
@@ -324,17 +686,24 @@ function handleApi(action, body) {
     const text = String(data.text || "").trim();
     if (!text) return fail("пустое сообщение");
     if (text.length > MAX_MESSAGE) return fail("слишком длинное сообщение");
-    if (to) {
-      const target = store.users[to.toLowerCase()];
-      if (!target) return fail("нет такого пользователя");
+    let target = "";
+    const chId = channelIdOfTarget(to);
+    if (to.indexOf("ch:") === 0) {
+      if (!chId) return fail("канал не найден");
+      if (!isChannelMember(chId, session.key)) return fail("сначала вступи в канал");
+      target = "ch:" + chId;
+    } else if (to) {
+      const peer = store.users[to.toLowerCase()];
+      if (!peer) return fail("нет такого пользователя");
       if (to.toLowerCase() === session.key) return fail("нельзя писать самому себе");
+      target = peer.nick;
     }
     const flood = floodCheck(session.key);
     if (flood) return fail(flood);
     const message = {
       id: store.nextId++,
       from: session.nick,
-      to: to ? store.users[to.toLowerCase()].nick : "",
+      to: target,
       text: text,
       ts: Date.now()
     };
@@ -344,20 +713,92 @@ function handleApi(action, body) {
     return { ok: true, message: message };
   }
 
+  if (action === "channels") {
+    return { ok: true, channels: myChannels(session.key) };
+  }
+
+  if (action === "channel-create") {
+    const title = String(data.title || "").trim().slice(0, 60);
+    if (title.length < 2) return fail("название канала: минимум 2 символа");
+    const about = String(data.about || "").trim().slice(0, 200);
+    let id = "c" + crypto.randomBytes(4).toString("hex");
+    while (store.channels[id]) id = "c" + crypto.randomBytes(4).toString("hex");
+    store.channels[id] = {
+      id: id,
+      title: title,
+      about: about,
+      owner: session.key,
+      created: Date.now()
+    };
+    store.channelMembers[id] = [session.key];
+    saveStore();
+    log("канал создан: " + title + " (" + id + ") от " + session.nick);
+    return { ok: true, channel: publicChannel(store.channels[id], session.key) };
+  }
+
+  if (action === "channel-join") {
+    const id = String(data.id || "").trim();
+    const ch = channelOf(id);
+    if (!ch) return fail("канал не найден");
+    if (!store.channelMembers[id]) store.channelMembers[id] = [];
+    if (!isChannelMember(id, session.key)) {
+      store.channelMembers[id].push(session.key);
+      saveStore();
+      log("в канал " + id + " вступил " + session.nick);
+    }
+    return { ok: true, channel: publicChannel(ch, session.key), channels: myChannels(session.key) };
+  }
+
+  if (action === "channel-leave") {
+    const id = String(data.id || "").trim();
+    const ch = channelOf(id);
+    if (!ch) return fail("канал не найден");
+    store.channelMembers[id] = channelMembersOf(id).filter((k) => k !== session.key);
+    saveStore();
+    return { ok: true, channels: myChannels(session.key) };
+  }
+
+  if (action === "channel-delete") {
+    const id = String(data.id || "").trim();
+    const ch = channelOf(id);
+    if (!ch) return fail("канал не найден");
+    if (ch.owner !== session.key && !isAdminKey(session.key)) return fail("удалять канал может только владелец");
+    delete store.channels[id];
+    delete store.channelMembers[id];
+    store.messages = store.messages.filter((m) => String(m.to || "") !== "ch:" + id);
+    saveStore();
+    log("канал удалён: " + id);
+    return { ok: true, channels: myChannels(session.key) };
+  }
+
   if (action === "poll") {
     const since = Number(data.since) || 0;
+    const joined = Object.keys(store.channels).filter((id) => isChannelMember(id, session.key));
+    const joinedSet = {};
+    for (const id of joined) joinedSet["ch:" + id] = true;
     const fresh = store.messages.filter((m) => m.id > since);
-    const visible = fresh.filter((m) => !m.to ||
-      m.to.toLowerCase() === session.key ||
-      m.from.toLowerCase() === session.key);
-    return { ok: true, messages: visible, users: publicUsers(), time: Date.now() };
+    const visible = fresh.filter((m) => {
+      if (m.to && String(m.to).indexOf("ch:") === 0) return !!joinedSet[String(m.to)];
+      if (!m.to) return true;
+      return m.to.toLowerCase() === session.key || m.from.toLowerCase() === session.key;
+    });
+    return { ok: true, messages: visible, users: publicUsers(), channels: myChannels(session.key), time: Date.now() };
   }
 
   if (action === "history") {
     const limit = Math.min(Number(data.limit) || 200, 500);
-    const list = messagesFor(session.key, data.with);
-    return { ok: true, messages: list.slice(-limit), users: publicUsers() };
+    const withRaw = String(data.with == null ? "" : data.with).trim();
+    const chId = channelIdOfTarget(withRaw);
+    if (withRaw.indexOf("ch:") === 0) {
+      if (!chId) return fail("канал не найден");
+      if (!isChannelMember(chId, session.key)) return fail("сначала вступи в канал");
+      const list = store.messages.filter((m) => String(m.to || "") === "ch:" + chId);
+      return { ok: true, messages: list.slice(-limit), users: publicUsers(), channels: myChannels(session.key) };
+    }
+    const list = messagesFor(session.key, withRaw);
+    return { ok: true, messages: list.slice(-limit), users: publicUsers(), channels: myChannels(session.key) };
   }
+
 
   if (action === "friends") {
     const list = store.friends[session.key] || [];
@@ -467,8 +908,20 @@ function handleApi(action, body) {
       user.avatar = Number.isFinite(av) && av >= 0 && av <= 6 ? av : 0;
     }
     if (data.hideOnline !== undefined) user.hideOnline = !!data.hideOnline;
+    if (data.phone !== undefined) {
+      const asked = String(data.phone || "").trim();
+      const phone = phoneKeyOf(asked);
+      if (asked && !phone) return fail("неверный номер — нужно 10-11 цифр");
+      if (phone) {
+        const busy = userByPhone(phone);
+        if (busy && busy !== session.key) return fail("этот номер уже занят другим ником");
+        user.phone = phone;
+      } else {
+        user.phone = "";
+      }
+    }
     saveStore();
-    return { ok: true, profile: profileOf(user) };
+    return { ok: true, profile: selfProfileOf(user) };
 
   }
 
@@ -741,14 +1194,13 @@ const server = http.createServer((req, res) => {
         try { body = JSON.parse(text); } catch (e) { sendJson(res, 400, fail("неверный JSON")); return; }
       }
       const action = pathname.slice(5);
-      let result;
-      try {
-        result = handleApi(action, body);
-      } catch (e) {
-        log("ошибка в " + action + ": " + e.stack);
-        result = fail("внутренняя ошибка сервера");
-      }
-      sendJson(res, 200, result);
+      Promise.resolve()
+        .then(() => handleApi(action, body))
+        .then((result) => sendJson(res, 200, result || fail("пустой ответ")))
+        .catch((e) => {
+          log("ошибка в " + action + ": " + e.stack);
+          sendJson(res, 200, fail("внутренняя ошибка сервера"));
+        });
     });
     return;
   }
