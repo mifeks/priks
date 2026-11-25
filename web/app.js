@@ -59,6 +59,9 @@
     unread: {},
     query: "",
     tab: "all",
+    folders: [],
+    folder: "",
+    editingFolder: "",
     polling: false,
     alive: false,
     yandexReady: null,
@@ -419,6 +422,14 @@
     if (typeof p.customStatus === "string") profile.custom = p.customStatus;
     if (p.avatar) profile.avatar = p.avatar;
     if (p.hideOnline !== undefined) settings.privacy.hideOnline = !!p.hideOnline;
+    if (p.privacy && typeof p.privacy === "object") {
+      state.account = state.account || {};
+      state.account.privacy = p.privacy;
+    }
+    if (p.blocked && p.blocked.length !== undefined) {
+      state.account = state.account || {};
+      state.account.blocked = p.blocked;
+    }
     if (p.email !== undefined) {
       state.account = state.account || {};
       state.account.email = p.email || "";
@@ -430,6 +441,380 @@
     saveProfile();
     saveSettings();
     if (state.alive) syncAccountUi();
+  }
+
+  var PRIVACY_DEFAULTS = { online: "all", phone: "nobody", find: "all", write: "all", content: "all" };
+  var PRIVACY_LABELS = { all: "все", contacts: "контакты", nobody: "никто" };
+
+  function privacyState() {
+    state.account = state.account || {};
+    var p = state.account.privacy;
+    if (!p || typeof p !== "object") {
+      p = {};
+      for (var k in PRIVACY_DEFAULTS) p[k] = PRIVACY_DEFAULTS[k];
+      state.account.privacy = p;
+    }
+    for (var d in PRIVACY_DEFAULTS) {
+      if (!p[d]) p[d] = PRIVACY_DEFAULTS[d];
+    }
+    return p;
+  }
+
+  function blockedState() {
+    state.account = state.account || {};
+    if (!state.account.blocked) state.account.blocked = [];
+    return state.account.blocked;
+  }
+
+  function syncBlockedUi() {
+    var p = privacyState();
+    var fields = { "pv-online": "online", "pv-phone": "phone", "pv-find": "find", "pv-write": "write", "pv-content": "content" };
+    for (var id in fields) {
+      var node = $(id);
+      if (node) node.value = p[fields[id]];
+    }
+    var list = blockedState();
+    var st = $("blocked-state");
+    if (st) st.textContent = list.length ? list.length + " " + (list.length === 1 ? "человек" : "человека") : "никого";
+    renderBlockedList();
+  }
+
+  function renderBlockedList() {
+    var box = $("blocked-list");
+    if (!box) return;
+    var list = blockedState();
+    box.innerHTML = "";
+    if (!list.length) {
+      var empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "Список пуст — здесь появятся заблокированные";
+      box.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < list.length; i++) {
+      (function (item) {
+        var row = document.createElement("div");
+        row.className = "row";
+        var text = document.createElement("div");
+        var t = document.createElement("div");
+        t.className = "t";
+        t.textContent = "@" + item.nick;
+        var d = document.createElement("div");
+        d.className = "d";
+        d.textContent = item.exists === false ? "аккаунт удалён" : "не может писать и находить вас";
+        text.appendChild(t);
+        text.appendChild(d);
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn ghost small";
+        btn.textContent = "Разблокировать";
+        btn.onclick = function () { unblockNick(item.nick); };
+        row.appendChild(text);
+        row.appendChild(btn);
+        box.appendChild(row);
+      })(list[i]);
+    }
+  }
+
+  function savePrivacy(field, level) {
+    if (!state.token) return;
+    privacyState()[field] = level;
+    syncBlockedUi();
+    var patch = {};
+    patch[field] = level;
+    api("privacy", { token: state.token, privacy: patch }).then(function (res) {
+      if (res && res.ok) {
+        if (res.profile) mergeProfile(res.profile);
+        syncBlockedUi();
+        toast("Сохранено: " + (PRIVACY_LABELS[level] || level));
+      } else {
+        toast((res && res.error) || "Не удалось сохранить");
+      }
+    }).catch(function () { toast("Нет связи"); });
+  }
+
+  function blockNick() {
+    var input = $("block-nick");
+    var err = $("block-err");
+    if (err) err.textContent = "";
+    var nick = String(input && input.value || "").trim().replace(/^@+/, "");
+    if (!nick) { if (err) err.textContent = "введите ник"; return; }
+    api("block", { token: state.token, nick: nick }).then(function (res) {
+      if (res && res.ok) {
+        state.account.blocked = res.blocked || [];
+        if (input) input.value = "";
+        syncBlockedUi();
+        toast("Заблокирован @" + nick);
+      } else if (err) {
+        err.textContent = (res && res.error) || "не получилось";
+      }
+    }).catch(function () { if (err) err.textContent = "нет связи"; });
+  }
+
+  function unblockNick(nick) {
+    api("unblock", { token: state.token, nick: nick }).then(function (res) {
+      if (res && res.ok) {
+        state.account.blocked = res.blocked || [];
+        syncBlockedUi();
+        toast("Разблокирован @" + nick);
+      } else {
+        toast((res && res.error) || "не получилось");
+      }
+    }).catch(function () { toast("Нет связи"); });
+  }
+
+  var FOLDER_KEY = "priks.folders";
+
+  function loadFolders() {
+    var list = [];
+    try {
+      var raw = localStorage.getItem(FOLDER_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      if (parsed && parsed.length !== undefined) list = parsed;
+    } catch (e) { list = []; }
+    state.folders = [];
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i];
+      if (!f || !f.id) continue;
+      state.folders.push({
+        id: String(f.id),
+        title: String(f.title || "Папка").slice(0, 24),
+        chats: f.chats && f.chats.length !== undefined ? f.chats.map(String) : []
+      });
+    }
+    if (state.folder && state.folder !== "unread" && state.folder !== "channels" && !folderById(state.folder)) {
+      state.folder = "";
+    }
+    if (!state.folder) {
+      try { state.folder = localStorage.getItem("priks.folder") || ""; } catch (e) { state.folder = ""; }
+      if (state.folder && state.folder !== "unread" && state.folder !== "channels" && !folderById(state.folder)) {
+        state.folder = "";
+      }
+    }
+  }
+
+  function saveFolders() {
+    try { localStorage.setItem(FOLDER_KEY, JSON.stringify(state.folders || [])); } catch (e) { }
+  }
+
+  function folderById(id) {
+    var list = state.folders || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+
+  function folderAllows(key, unreadCount) {
+    var f = state.folder || "";
+    if (!f) return true;
+    var raw = String(key || "");
+    if (f === "channels") return raw.indexOf("ch:") === 0;
+    if (f === "unread") return (unreadCount || 0) > 0;
+    var folder = folderById(f);
+    if (!folder) return true;
+    return (folder.chats || []).indexOf(raw) >= 0;
+  }
+
+  function setFolder(id) {
+    state.folder = id || "";
+    try { localStorage.setItem("priks.folder", state.folder); } catch (e) { }
+    renderFolderChips();
+    renderChatList();
+  }
+
+  function renderFolderChips() {
+    var box = $("folderRow");
+    if (!box) return;
+    box.innerHTML = "";
+    var chips = [{ id: "", title: "Все" }, { id: "unread", title: "Непрочитанные" }, { id: "channels", title: "Каналы" }];
+    var list = state.folders || [];
+    for (var i = 0; i < list.length; i++) chips.push({ id: list[i].id, title: list[i].title });
+    for (var c = 0; c < chips.length; c++) {
+      (function (chip) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "fold-chip" + ((state.folder || "") === chip.id ? " active" : "");
+        b.textContent = chip.title;
+        b.title = chip.title;
+        b.onclick = function () { setFolder(chip.id); };
+        box.appendChild(b);
+      })(chips[c]);
+    }
+  }
+
+  function folderChatLabel(key) {
+    if (!key) return "Общий чат";
+    if (key.indexOf("ch:") === 0) {
+      var ch = channelOf(key.slice(3));
+      return ch ? ch.title : "канал";
+    }
+    var user = findUser(key);
+    return user ? (user.displayName || user.nick) : key;
+  }
+
+  function renderFolderList() {
+    var box = $("folder-list");
+    if (!box) return;
+    box.innerHTML = "";
+    var list = state.folders || [];
+    if (!list.length) {
+      var empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "Пока нет папок — создайте первую выше";
+      box.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < list.length; i++) {
+      (function (folder) {
+        var row = document.createElement("div");
+        row.className = "row";
+        var text = document.createElement("div");
+        var t = document.createElement("div");
+        t.className = "t";
+        t.textContent = folder.title;
+        var d = document.createElement("div");
+        d.className = "d";
+        var n = (folder.chats || []).length;
+        d.textContent = n ? n + " " + (n === 1 ? "чат" : (n < 5 ? "чата" : "чатов")) : "пустая";
+        text.appendChild(t);
+        text.appendChild(d);
+
+        var tools = document.createElement("div");
+        tools.className = "row-tools";
+
+        var edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "btn ghost small";
+        edit.textContent = "Состав";
+        edit.onclick = function () { openFolderEditor(folder.id); };
+
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "btn ghost small danger";
+        del.textContent = "Удалить";
+        del.onclick = function () { deleteFolder(folder.id); };
+
+        tools.appendChild(edit);
+        tools.appendChild(del);
+        row.appendChild(text);
+        row.appendChild(tools);
+        box.appendChild(row);
+      })(list[i]);
+    }
+  }
+
+  function syncFoldersUi() {
+    renderFolderList();
+    renderFolderChips();
+  }
+
+  function createFolder() {
+    var input = $("folder-title");
+    var err = $("folder-err");
+    if (err) err.textContent = "";
+    var title = String(input && input.value || "").trim().slice(0, 24);
+    if (title.length < 2) { if (err) err.textContent = "название: минимум 2 символа"; return; }
+    state.folders = state.folders || [];
+    for (var i = 0; i < state.folders.length; i++) {
+      if (state.folders[i].title.toLowerCase() === title.toLowerCase()) {
+        if (err) err.textContent = "такая папка уже есть";
+        return;
+      }
+    }
+    var folder = { id: "f" + Date.now().toString(36), title: title, chats: [] };
+    state.folders.push(folder);
+    saveFolders();
+    if (input) input.value = "";
+    renderFolderList();
+    renderFolderChips();
+    openFolderEditor(folder.id);
+    toast("Папка «" + title + "» создана");
+  }
+
+  function deleteFolder(id) {
+    var folder = folderById(id);
+    if (!folder) return;
+    state.folders = (state.folders || []).filter(function (f) { return f.id !== id; });
+    saveFolders();
+    if (state.folder === id) state.folder = "";
+    if (state.editingFolder === id) {
+      state.editingFolder = "";
+      var card = $("folder-edit-card");
+      if (card) card.classList.add("hidden");
+    }
+    renderFolderList();
+    renderFolderChips();
+    renderChatList();
+    toast("Папка «" + folder.title + "» удалена");
+  }
+
+  function folderCandidates() {
+    var out = [];
+    out.push({ key: "", label: "Общий чат" });
+    var channels = state.channels || [];
+    for (var c = 0; c < channels.length; c++) {
+      out.push({ key: "ch:" + channels[c].id, label: channels[c].title });
+    }
+    var people = chatPeople();
+    for (var i = 0; i < people.length; i++) {
+      var u = people[i];
+      if (!u || !u.nick) continue;
+      if (u.nick.toLowerCase() === String(state.nick || "").toLowerCase()) continue;
+      out.push({ key: u.nick, label: u.displayName || u.nick });
+    }
+    return out;
+  }
+
+  function openFolderEditor(id) {
+    var folder = folderById(id);
+    if (!folder) return;
+    state.editingFolder = id;
+    var card = $("folder-edit-card");
+    var title = $("folder-edit-title");
+    var box = $("folder-chats");
+    if (title) title.textContent = "Состав: " + folder.title;
+    if (box) {
+      box.innerHTML = "";
+      var list = folderCandidates();
+      if (!list.length) {
+        box.innerHTML = '<div class="hint">Пока нет чатов</div>';
+      }
+      for (var i = 0; i < list.length; i++) {
+        (function (item) {
+          var label = document.createElement("label");
+          label.className = "folder-line";
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.value = item.key;
+          cb.checked = (folder.chats || []).indexOf(item.key) >= 0;
+          var span = document.createElement("span");
+          span.textContent = item.label;
+          label.appendChild(cb);
+          label.appendChild(span);
+          box.appendChild(label);
+        })(list[i]);
+      }
+    }
+    if (card) {
+      card.classList.remove("hidden");
+      card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+
+  function saveFolderEditor() {
+    var folder = folderById(state.editingFolder);
+    if (!folder) return;
+    var box = $("folder-chats");
+    var picked = [];
+    if (box) {
+      var boxes = box.querySelectorAll('input[type="checkbox"]');
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) picked.push(boxes[i].value);
+    }
+    folder.chats = picked;
+    saveFolders();
+    renderFolderList();
+    renderFolderChips();
+    renderChatList();
+    toast("Папка «" + folder.title + "» сохранена");
   }
 
   function syncAccountUi() {
@@ -669,7 +1054,7 @@
     if (!el.chatList) return;
     el.chatList.innerHTML = "";
 
-    if (state.tab === "all") {
+    if (state.tab === "all" && folderAllows("", 0)) {
       var general = document.createElement("button");
       general.className = "chat-item" + (state.chat === "" ? " active" : "");
       var gav = document.createElement("span");
@@ -700,6 +1085,7 @@
       for (var c = 0; c < state.channels.length; c++) {
         var ch = state.channels[c];
         var chKey = "ch:" + ch.id;
+        if (!folderAllows(chKey, state.unread[chKey] || 0)) continue;
         if (query && ch.title.toLowerCase().indexOf(query) < 0 && ch.id.toLowerCase().indexOf(query) < 0) continue;
         var chCount = state.unread[chKey] || 0;
         var chMsgs = state.messages.filter(function (m) { return String(m.to || "") === "ch:" + ch.id; });
@@ -741,6 +1127,7 @@
       if (!u || !u.nick) continue;
       if (u.nick.toLowerCase() === state.nick.toLowerCase()) continue;
       var label = u.displayName || u.nick;
+      if (!folderAllows(u.nick, state.unread[u.nick.toLowerCase()] || 0)) continue;
       if (query && (label.toLowerCase().indexOf(query) < 0 && u.nick.toLowerCase().indexOf(query) < 0)) continue;
 
       var item = document.createElement("button");
@@ -1099,6 +1486,8 @@
   var PANE_TITLES = {
     profile: "Профиль",
     security: "Безопасность",
+    blocked: "Чёрный список",
+    folders: "Папки",
     notify: "Уведомления",
     devices: "Устройства",
     look: "Оформление",
@@ -1120,6 +1509,8 @@
     if (el.sets) el.sets.classList.add("pane-open");
     if (el.setsBody) el.setsBody.scrollTop = 0;
     if (pane === "devices" || pane === "about") syncDevicesUi();
+    if (pane === "security" || pane === "blocked") syncBlockedUi();
+    if (pane === "folders") syncFoldersUi();
   }
 
   function syncDevicesUi() {
@@ -1482,6 +1873,20 @@
     $("btnCloseSettings").addEventListener("click", closeSettings);
     $("btnDone").addEventListener("click", closeSettings);
 
+    var privacyFields = { "pv-online": "online", "pv-phone": "phone", "pv-find": "find", "pv-write": "write", "pv-content": "content" };
+    for (var pf in privacyFields) {
+      (function (nodeId, field) {
+        var node = $(nodeId);
+        if (!node) return;
+        node.addEventListener("change", function () { savePrivacy(field, this.value); });
+      })(pf, privacyFields[pf]);
+    }
+    if ($("btnBlock")) $("btnBlock").addEventListener("click", blockNick);
+    if ($("block-nick")) {
+      $("block-nick").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); blockNick(); } });
+    }
+    if ($("btnGoBlocked")) $("btnGoBlocked").addEventListener("click", function () { showPane("blocked"); });
+
     var setsItems = el.setsList.querySelectorAll(".sets-item");
     for (var si = 0; si < setsItems.length; si++) {
       setsItems[si].addEventListener("click", function () { showPane(this.getAttribute("data-pane")); });
@@ -1781,6 +2186,16 @@
     if (window.matchMedia) {
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
         if (settings.theme === "system") applySettings();
+      });
+    }
+
+    loadFolders();
+    renderFolderChips();
+    if ($("btnFolderCreate")) $("btnFolderCreate").addEventListener("click", createFolder);
+    if ($("btnFolderSave")) $("btnFolderSave").addEventListener("click", saveFolderEditor);
+    if ($("folder-title")) {
+      $("folder-title").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); createFolder(); }
       });
     }
 
