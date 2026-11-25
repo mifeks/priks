@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -77,6 +77,9 @@
       <label for="password">Пароль</label>
       <input id="password" type="password" maxlength="64" autocomplete="new-password" placeholder="минимум 4 символа">
       <div class="err" id="pass-err"></div>
+      <label for="reg-birth">Дата рождения <span class="opt">— обязательна, возраст от 14 лет</span></label>
+      <input id="reg-birth" type="date" min="1900-01-01" max="2012-11-25">
+      <div class="err" id="birth-err"></div>
       <label for="reg-email">Почта <span class="opt">— необязательно, для сброса пароля</span></label>
       <input id="reg-email" type="email" maxlength="120" spellcheck="false" autocomplete="email" placeholder="name@mail.ru">
       <div class="err" id="email-err"></div>
@@ -694,9 +697,24 @@
   </div>
 </div>
 
+<div id="infoSheet" class="overlay hidden">
+  <div class="sheet info-sheet">
+    <header class="sheet-head">
+      <div>
+        <div class="sheet-title" id="infoTitle">О человеке</div>
+        <div class="sheet-sub" id="infoSub">профиль</div>
+      </div>
+      <button class="icon-btn" id="btnInfoClose" title="Закрыть" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div class="sheet-body" id="infoBody"></div>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 
-<script src="config.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
