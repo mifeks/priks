@@ -16,6 +16,12 @@ Environment=PUBLIC_URL=https://priks.ru
 Environment=YANDEX_CLIENT_ID=
 Environment=YANDEX_CLIENT_SECRET=
 Environment=CORS_ORIGINS=https://mifeks.github.io
+Environment=SMTP_HOST=
+Environment=SMTP_PORT=465
+Environment=SMTP_SECURE=1
+Environment=SMTP_USER=
+Environment=SMTP_PASS=
+Environment=SMTP_FROM=
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3
