@@ -267,6 +267,7 @@ function publicChannel(ch, myKey) {
     id: ch.id,
     title: ch.title,
     about: ch.about || "",
+    photo: ch.photo || "",
     owner: ch.owner,
     members: members.length,
     joined: myKey ? members.indexOf(myKey) >= 0 : false,
@@ -424,6 +425,7 @@ function publicGroup(g, myKey) {
   const out = {
     id: g.id,
     title: g.title,
+    photo: g.photo || "",
     owner: g.owner,
     members: members.length,
     joined: myKey ? members.indexOf(myKey) >= 0 : false,
@@ -784,6 +786,7 @@ function handleApi(action, body) {
         status: seeContent ? user.status || "on" : "on",
         customStatus: seeContent ? user.customStatus || "" : "",
         online: allowedBy(priv.online, key, viewerKey) && !user.hideOnline && isOnline(user),
+        phone: allowedBy(priv.phone, key, viewerKey) ? user.phone || "" : "",
         byPhone: byPhone
       }
     };
@@ -910,12 +913,14 @@ function handleApi(action, body) {
     const title = String(data.title || "").trim().slice(0, 60);
     if (title.length < 2) return fail("название канала: минимум 2 символа");
     const about = String(data.about || "").trim().slice(0, 200);
+    const photo = data.photo ? imageRefOf(data.photo) : "";
     let id = "c" + crypto.randomBytes(4).toString("hex");
     while (store.channels[id]) id = "c" + crypto.randomBytes(4).toString("hex");
     store.channels[id] = {
       id: id,
       title: title,
       about: about,
+      photo: photo,
       owner: session.key,
       created: Date.now()
     };
@@ -1238,6 +1243,7 @@ function handleApi(action, body) {
     store.groups[id] = {
       id: id,
       title: title,
+      photo: data.photo ? imageRefOf(data.photo) : "",
       owner: session.key,
       members: members,
       created: Date.now()
@@ -1311,6 +1317,42 @@ function handleApi(action, body) {
     return { ok: true, channels: out };
   }
 
+  if (action === "channel-photo") {
+    const id = String(data.id || "").trim();
+    const ch = channelOf(id);
+    if (!ch) return fail("канал не найден");
+    if (ch.owner !== session.key && !isAdminKey(session.key)) return fail("аватар канала меняет только владелец канала");
+    const raw = String(data.photo || "").trim();
+    if (!raw) {
+      ch.photo = "";
+    } else {
+      const ref = imageRefOf(raw);
+      if (!ref) return fail("картинка не нашлась — загрузи фото заново");
+      ch.photo = ref;
+    }
+    saveStore();
+    log("аватар канала " + id + (ch.photo ? " обновлён" : " снят") + " — " + session.nick);
+    return { ok: true, channel: publicChannel(ch, session.key), channels: myChannels(session.key) };
+  }
+
+  if (action === "group-photo") {
+    const id = String(data.id || "").trim();
+    const g = groupOf(id);
+    if (!g) return fail("группа не найдена");
+    if (g.owner !== session.key && !isAdminKey(session.key)) return fail("аватар группы меняет только владелец группы");
+    const raw = String(data.photo || "").trim();
+    if (!raw) {
+      g.photo = "";
+    } else {
+      const ref = imageRefOf(raw);
+      if (!ref) return fail("картинка не нашлась — загрузи фото заново");
+      g.photo = ref;
+    }
+    saveStore();
+    log("аватар группы " + id + (g.photo ? " обновлён" : " снят") + " — " + session.nick);
+    return { ok: true, group: publicGroup(g, session.key), groups: myGroups(session.key) };
+  }
+
   if (action === "channel-verify") {
     if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("верифицировать каналы может только владелец");
     const id = String(data.id || "").trim();
@@ -1324,8 +1366,7 @@ function handleApi(action, body) {
     return { ok: true, channel: publicChannel(ch, session.key), channels: myChannels(session.key) };
   }
 
-  if (action === "logout-all") {
-    let dropped = 0;
+  if (action === "logout-all") {    let dropped = 0;
     for (const token of Object.keys(store.tokens)) {
       if (String(store.tokens[token]).toLowerCase() !== session.key) continue;
       if (token === data.token) continue;
