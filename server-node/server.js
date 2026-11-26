@@ -595,7 +595,8 @@ function profileOf(user) {
     bot: !!user.bot,
     rights: rightsOf(user),
     owner: isOwnerKey(key),
-    admin: isAdminKey(key)
+    admin: isAdminKey(key),
+    mutedUntil: Number(user.mutedUntil) > Date.now() ? Number(user.mutedUntil) : 0
   };
 }
 
@@ -975,6 +976,10 @@ function handleApi(action, body) {
     const img = imageRefOf(data.img);
     if (!text && !img) return fail("пустое сообщение");
     if (text.length > MAX_MESSAGE) return fail("слишком длинное сообщение");
+    const mutedUntil = Number(session.user && session.user.mutedUntil) || 0;
+    if (mutedUntil > Date.now()) {
+      return fail("тебя временно заглушили до " + new Date(mutedUntil).toLocaleString("ru-RU"));
+    }
     let target = "";
     const chId = channelIdOfTarget(to);
     const grId = groupIdOfTarget(to);
@@ -1673,6 +1678,141 @@ function handleApi(action, body) {
     for (const id of Object.keys(store.channels)) out.push(publicChannel(store.channels[id], session.key));
     out.sort((a, b) => (b.created || 0) - (a.created || 0));
     return { ok: true, channels: out };
+  }
+
+  if (action === "admin-panel") {
+    if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("панель создателя доступна только владельцу");
+    const now = Date.now();
+    const sentBy = {};
+    for (const m of store.messages) {
+      const key = String(m.from || "").toLowerCase();
+      sentBy[key] = (sentBy[key] || 0) + 1;
+    }
+    const users = [];
+    let humans = 0;
+    let bots = 0;
+    let onlineNow = 0;
+    let mutedNow = 0;
+    let bannedNow = 0;
+    for (const key of Object.keys(store.users)) {
+      const u = store.users[key];
+      const ban = store.bans[key];
+      const activeBan = ban && (!ban.until || ban.until > now) ? ban : null;
+      const muted = Number(u.mutedUntil) > now;
+      if (u.bot) bots++; else humans++;
+      if (isOnline(u)) onlineNow++;
+      if (muted) mutedNow++;
+      if (activeBan) bannedNow++;
+      users.push({
+        nick: u.nick,
+        displayName: u.displayName || u.nick,
+        avatar: u.avatar || 1,
+        photo: u.photo || "",
+        bot: !!u.bot,
+        owner: isOwnerKey(key),
+        admin: isAdminKey(key),
+        rights: rightsOf(u),
+        online: isOnline(u),
+        created: u.created || 0,
+        lastSeen: u.lastSeen || 0,
+        birth: u.birth || "",
+        email: u.email || "",
+        emailVerified: !!u.emailVerified,
+        phone: u.phone || "",
+        oauth: u.oauth || "",
+        sent: sentBy[key] || 0,
+        mutedUntil: muted ? Number(u.mutedUntil) : 0,
+        banned: activeBan
+          ? { reason: activeBan.reason || "", by: activeBan.by || "", ts: activeBan.ts || 0, until: activeBan.until || 0 }
+          : null
+      });
+    }
+    users.sort((a, b) => (b.created || 0) - (a.created || 0));
+    const channels = [];
+    for (const id of Object.keys(store.channels)) channels.push(publicChannel(store.channels[id], session.key));
+    channels.sort((a, b) => (b.created || 0) - (a.created || 0));
+    const groups = [];
+    for (const id of Object.keys(store.groups)) groups.push(publicGroup(store.groups[id], session.key));
+    groups.sort((a, b) => (b.created || 0) - (a.created || 0));
+    const bans = users.filter((u) => u.banned).map((u) => ({
+      nick: u.nick,
+      reason: u.banned.reason,
+      by: u.banned.by,
+      ts: u.banned.ts,
+      until: u.banned.until
+    }));
+    bans.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    return {
+      ok: true,
+      serverTime: now,
+      stats: {
+        users: Object.keys(store.users).length,
+        humans: humans,
+        bots: bots,
+        online: onlineNow,
+        channels: channels.length,
+        groups: groups.length,
+        messages: store.messages.length,
+        bans: bannedNow,
+        muted: mutedNow
+      },
+      users: users,
+      channels: channels,
+      groups: groups,
+      bans: bans
+    };
+  }
+
+  if (action === "admin-mute" || action === "admin-unmute") {
+    if (!canByRight(session, "moderator")) return fail("нет прав: нужен модератор");
+    const nick = normalizeNick(data.nick).toLowerCase();
+    const target = store.users[nick];
+    if (!target) return fail("нет такого пользователя");
+    if (isAdminKey(nick) || isOwnerKey(nick)) return fail("владельца и админа не заглушить");
+    if (action === "admin-unmute" || Number(data.minutes) <= 0) {
+      target.mutedUntil = 0;
+      saveStore();
+      log("мут снят: " + target.nick + " — " + session.nick);
+      return { ok: true, nick: target.nick, mutedUntil: 0 };
+    }
+    const minutes = Math.min(Number(data.minutes) || 0, 60 * 24 * 30);
+    target.mutedUntil = Date.now() + minutes * 60000;
+    saveStore();
+    log("мут: " + target.nick + " на " + minutes + " мин — " + session.nick);
+    return { ok: true, nick: target.nick, mutedUntil: target.mutedUntil };
+  }
+
+  if (action === "admin-delete") {
+    if (!isOwnerKey(session.key)) return fail("удалять аккаунты может только владелец");
+    const nick = normalizeNick(data.nick).toLowerCase();
+    const target = store.users[nick];
+    if (!target) return fail("нет такого пользователя");
+    if (isOwnerKey(nick) || isAdminKey(nick)) return fail("аккаунт владельца удалить нельзя");
+    delete store.users[nick];
+    dropSessions(nick);
+    delete store.bans[nick];
+    delete store.blocks[nick];
+    for (const owner of Object.keys(store.blocks)) {
+      const list = store.blocks[owner];
+      if (Array.isArray(list)) store.blocks[owner] = list.filter((n) => String(n).toLowerCase() !== nick);
+    }
+    for (const owner of Object.keys(store.friends)) {
+      const list = store.friends[owner];
+      if (Array.isArray(list)) store.friends[owner] = list.filter((n) => String(n).toLowerCase() !== nick);
+    }
+    for (const id of Object.keys(store.channelMembers)) {
+      const list = store.channelMembers[id];
+      if (!Array.isArray(list)) continue;
+      store.channelMembers[id] = list.filter((k) => k !== nick);
+    }
+    for (const id of Object.keys(store.groups)) {
+      const g = store.groups[id];
+      if (g && Array.isArray(g.members)) g.members = g.members.filter((k) => k !== nick);
+      if (g && Array.isArray(g.admins)) g.admins = g.admins.filter((k) => k !== nick);
+    }
+    saveStore();
+    log("аккаунт удалён: " + (target.nick || nick) + " — " + session.nick);
+    return { ok: true, nick: target.nick || nick };
   }
 
   if (action === "channel-photo") {
