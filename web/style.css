@@ -416,12 +416,21 @@ input:disabled { opacity: .6; cursor: not-allowed; }
 }
 .msg-out .msg-body { background: var(--accent); color: var(--accent-contrast); border-bottom-right-radius: 5px; }
 .msg-in .msg-body { border-bottom-left-radius: 5px; }
+.msg.msg-photo .msg-body { background: none; padding: 0; border-radius: 0; box-shadow: none; }
 .msg-time { font-size: .7rem; color: var(--muted); margin-top: 3px; padding: 0 4px; }
+.msg-head { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; padding: 0 2px; }
+.msg-av {
+  width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%;
+  display: grid; place-items: center; font-size: .66rem; font-weight: 600;
+  background: var(--panel2); color: #fff; text-transform: uppercase;
+  background-size: cover; background-position: center; cursor: pointer;
+}
+.msg-head .msg-meta { margin: 0; padding: 0; }
 
 .composer { display: flex; gap: 10px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--panel); }
 .photo-btn { flex: 0 0 auto; align-self: center; }
 .msg-img {
-  display: block; max-width: 280px; max-height: 320px; border-radius: 8px;
+  display: block; max-width: 300px; max-height: 340px; border-radius: 12px;
   cursor: zoom-in; object-fit: cover;
 }
 .msg-text { white-space: pre-wrap; }
@@ -639,7 +648,7 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
 .sets-main-head .back { display: none; }
 .sets-main-title { flex: 1; font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
 .sets-main-title::before {
-  content: "прикс · настройки";
+  content: "РїСЂРёРєСЃ В· РЅР°СЃС‚СЂРѕР№РєРё";
   display: block; font-family: var(--font-ui); font-size: .62rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .24em; color: var(--muted); margin-bottom: 5px;
 }
@@ -664,7 +673,7 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
   font-family: var(--font-display); font-size: .95rem; font-weight: 700;
   text-transform: none; letter-spacing: 0; color: var(--text); margin-bottom: 2px;
 }
-.pane .group-title::before { content: "— "; color: var(--accent); }
+.pane .group-title::before { content: "вЂ” "; color: var(--accent); }
 .pane .row { padding: 12px 0; }
 .pane .row .t { font-size: .9rem; }
 .pane .row .d { font-size: .76rem; }
@@ -799,3 +808,67 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
 .info-person:last-child { border-bottom: 0; }
 .info-person .t { font-size: .9rem; }
 .info-person .d { font-size: .76rem; color: var(--muted); }
+
+.reply-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 18px 6px; padding: 8px 10px;
+  border-left: 3px solid var(--accent); background: var(--panel2);
+  border-radius: 8px; font-size: .84rem;
+}
+.reply-bar.hidden { display: none; }
+.reply-mark { color: var(--accent); font-size: 1rem; line-height: 1; }
+.reply-text { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.msg { position: relative; }
+.msg-quote {
+  border-left: 3px solid var(--accent); padding: 4px 8px; margin-bottom: 6px;
+  background: rgba(183, 141, 74, .12); border-radius: 6px; font-size: .8rem; color: var(--muted);
+  max-width: 320px;
+}
+.msg-quote b { color: var(--text); font-weight: 600; display: block; font-size: .78rem; }
+.msg-out .msg-quote { background: rgba(0, 0, 0, .06); }
+.msg-tools {
+  position: absolute; top: -34px; right: 0; display: none; align-items: center; gap: 2px;
+  padding: 3px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: var(--shadow-lg); z-index: 5;
+}
+.msg:hover .msg-tools, .msg-tools.open { display: flex; }
+.msg-tools button {
+  border: 0; background: none; cursor: pointer; font-size: 1rem; line-height: 1;
+  padding: 4px 5px; border-radius: 6px; color: var(--text);
+}
+.msg-tools button:hover { background: var(--panel2); }
+.msg-tools .dots { font-size: 1.1rem; }
+.msg-menu {
+  position: absolute; top: 34px; right: 0; min-width: 160px; z-index: 6;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--shadow-lg); padding: 4px; display: none;
+}
+.msg-menu.open { display: block; }
+.msg-menu button {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; font-size: .86rem; color: var(--text);
+}
+.msg-menu button:hover { background: var(--panel2); }
+.msg-menu button.danger { color: #c0392b; }
+.msg-reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.react-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-size: .78rem; color: var(--text);
+}
+.react-chip.mine { border-color: var(--accent); background: rgba(183, 141, 74, .16); }
+.msg-edited { font-size: .68rem; color: var(--muted); margin-left: 5px; }
+.info-note { width: 100%; min-height: 62px; resize: vertical; font: inherit; font-size: .88rem; padding: 8px 10px; }
+.info-rights { display: flex; flex-direction: column; gap: 8px; }
+.right-line { display: flex; align-items: center; gap: 9px; font-size: .88rem; }
+.right-line input { width: 16px; height: 16px; accent-color: var(--accent); }
+.edit-sheet { max-width: 520px; }
+.edit-text { width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); resize: vertical; }
+.bot-rules { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.bot-rule { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 6px; align-items: center; }
+.bot-rule input { font-size: .86rem; }
+.bot-rule .icon-btn { width: 30px; height: 30px; }
+.bot-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+.bot-row:last-child { border-bottom: 0; }
+.bot-row .t { font-size: .9rem; }
+.bot-row .d { font-size: .76rem; color: var(--muted); }
