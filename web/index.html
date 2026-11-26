@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -280,6 +280,9 @@
         </button>
         <button class="sets-item" data-pane="folders" type="button">
           <span>Папки</span><span class="chev">›</span>
+        </button>
+        <button class="sets-item hidden" data-pane="creator" id="setsCreator" type="button">
+          <span>Панель создателя</span><span class="chev">›</span>
         </button>
         <button class="sets-item" data-pane="moderation" type="button">
           <span>Модерация</span><span class="chev">›</span>
@@ -607,6 +610,31 @@
           </div>
         </section>
 
+        <section class="pane" data-pane="creator">
+          <div class="card">
+            <div class="group-title">Обзор</div>
+            <div class="hint" id="creator-hint">Все аккаунты, боты, каналы и блокировки в одном месте.</div>
+            <div class="stat-grid" id="creator-stats"></div>
+            <button class="btn ghost small" id="btnCreatorReload" type="button">Обновить</button>
+          </div>
+          <div class="card">
+            <div class="group-title">Кто в Приксе</div>
+            <div class="creator-toolbar">
+              <input id="creator-search" placeholder="поиск по нику или имени" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="seg creator-tabs" id="creator-tabs">
+              <button class="seg-btn active" type="button" data-ctab="users">Люди</button>
+              <button class="seg-btn" type="button" data-ctab="bots">Боты</button>
+              <button class="seg-btn" type="button" data-ctab="channels">Каналы</button>
+              <button class="seg-btn" type="button" data-ctab="groups">Группы</button>
+              <button class="seg-btn" type="button" data-ctab="bans">Баны</button>
+            </div>
+            <div id="creator-list" class="creator-list">
+              <div class="hint">загружаю…</div>
+            </div>
+          </div>
+        </section>
+
         <section class="pane" data-pane="moderation">
           <div class="card">
             <div class="group-title">Владелец</div>
@@ -791,7 +819,7 @@
   </div>
 </div>
 
-<script src="config.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="config.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
