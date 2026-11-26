@@ -1236,6 +1236,11 @@ function handleApi(action, body) {
   }
 
   if (action === "channels") {
+    if (!store.channelMembers.priks) store.channelMembers.priks = [];
+    if (store.channelMembers.priks.indexOf(session.key) < 0) {
+      store.channelMembers.priks.push(session.key);
+      saveStore();
+    }
     return { ok: true, channels: myChannels(session.key) };
   }
 
@@ -1264,10 +1269,7 @@ function handleApi(action, body) {
     const id = String(data.id || "").trim();
     const ch = channelOf(id);
     if (!ch) return fail("канал не найден");
-  if (!store.channelMembers[id]) store.channelMembers[id] = [];
-  for (const key of Object.keys(store.users)) {
-    if (!store.users[key].bot && store.channelMembers[id].indexOf(key) < 0) store.channelMembers[id].push(key);
-  }
+    if (!store.channelMembers[id]) store.channelMembers[id] = [];
     if (!isChannelMember(id, session.key)) {
       store.channelMembers[id].push(session.key);
       saveStore();
@@ -2057,6 +2059,10 @@ function ensureOfficialChannel() {
     if (!ch.title) ch.title = "Прикс · обновления";
   }
   if (!store.channelMembers[id]) store.channelMembers[id] = [];
+  for (const key of Object.keys(store.users)) {
+    if (store.users[key].bot) continue;
+    if (store.channelMembers[id].indexOf(key) < 0) store.channelMembers[id].push(key);
+  }
   if (created && !store.officialSeeded) {
     const posts = [
       "Привет! Это официальный канал Прикса. Здесь ИИ выкладывает все обновления — без слухов и опозданий.",
