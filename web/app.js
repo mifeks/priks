@@ -1914,6 +1914,49 @@
 
   var REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "🎉", "😮"];
 
+  var EMOJI_SET = [
+    "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣",
+    "😊", "🙂", "😉", "😍", "😘", "😎", "🤩", "🥳",
+    "🤔", "🤨", "😐", "😴", "😢", "😭", "😡", "🤗",
+    "👍", "👎", "👏", "🙏", "💪", "🤝", "👀", "✌️",
+    "❤️", "💔", "🔥", "✨", "⭐", "🎉", "🎁", "💯",
+    "☕", "🍕", "⚡", "🌙", "☀️", "🌧️", "🚀", "📌"
+  ];
+
+  function insertEmoji(ch) {
+    var input = $("text");
+    if (!input) return;
+    var start = typeof input.selectionStart === "number" ? input.selectionStart : input.value.length;
+    var end = typeof input.selectionEnd === "number" ? input.selectionEnd : input.value.length;
+    input.value = input.value.slice(0, start) + ch + input.value.slice(end);
+    var pos = start + ch.length;
+    if (input.setSelectionRange) input.setSelectionRange(pos, pos);
+    input.focus();
+  }
+
+  function toggleEmojiPanel() {
+    var panel = $("emojiPanel");
+    if (!panel) return;
+    if (!panel.childNodes.length) {
+      for (var i = 0; i < EMOJI_SET.length; i++) {
+        (function (ch) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = ch;
+          b.title = ch;
+          b.onclick = function () { insertEmoji(ch); };
+          panel.appendChild(b);
+        })(EMOJI_SET[i]);
+      }
+    }
+    panel.classList.toggle("hidden");
+  }
+
+  function closeEmojiPanel() {
+    var panel = $("emojiPanel");
+    if (panel) panel.classList.add("hidden");
+  }
+
   function myRights() {
     return (state.me && Array.isArray(state.me.rights)) ? state.me.rights : [];
   }
@@ -2145,6 +2188,8 @@
     var text = el.text.value.trim();
     if (!text) return;
     el.text.value = "";
+    closeEmojiPanel();
+    el.text.focus();
     sendMessage({ text: text }).catch(function () {
       if (!el.text.value) el.text.value = text;
       toast("нет связи, попробуйте ещё раз");
@@ -3451,6 +3496,20 @@
     if ($("btnBotSave")) $("btnBotSave").addEventListener("click", saveBot);
     if ($("btnBotReset")) $("btnBotReset").addEventListener("click", resetBotForm);
     if ($("btnSaveRights")) $("btnSaveRights").addEventListener("click", saveRightsFromPane);
+    if ($("btnEmoji")) $("btnEmoji").addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleEmojiPanel();
+    });
+    document.addEventListener("click", function (e) {
+      var panel = $("emojiPanel");
+      if (!panel || panel.classList.contains("hidden")) return;
+      if (panel.contains(e.target)) return;
+      if (e.target && e.target.closest && e.target.closest("#btnEmoji")) return;
+      closeEmojiPanel();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeEmojiPanel();
+    });
     if ($("btnEditClose")) $("btnEditClose").addEventListener("click", closeEditMessage);
     if ($("btnEditCancel")) $("btnEditCancel").addEventListener("click", closeEditMessage);
     if ($("btnEditSave")) $("btnEditSave").addEventListener("click", saveEditMessage);
