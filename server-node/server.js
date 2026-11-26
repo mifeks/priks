@@ -25,6 +25,7 @@ const OWNER_NICKS = String(process.env.OWNER_NICKS || "")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 const FILES_DIR = path.join(DATA_DIR, "files");
+const OFFICIAL_OWNER = OWNER_NICKS[0] || "priks";
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
@@ -109,6 +110,7 @@ let store = {
   channels: {},
   channelMembers: {},
   groups: {},
+  notes: {},
   messages: [],
   nextId: 1
 };
@@ -129,6 +131,7 @@ function loadStore() {
     store.blocks = parsed.blocks && typeof parsed.blocks === "object" ? parsed.blocks : {};
     store.channels = parsed.channels && typeof parsed.channels === "object" ? parsed.channels : {};
     store.groups = parsed.groups && typeof parsed.groups === "object" ? parsed.groups : {};
+    store.notes = parsed.notes && typeof parsed.notes === "object" ? parsed.notes : {};
     store.channelMembers = parsed.channelMembers && typeof parsed.channelMembers === "object" ? parsed.channelMembers : {};
     store.messages = Array.isArray(parsed.messages) ? parsed.messages : [];
     store.nextId = parsed.nextId || (store.messages.length ? store.messages[store.messages.length - 1].id + 1 : 1);
@@ -273,6 +276,7 @@ function publicChannel(ch, myKey) {
     joined: myKey ? members.indexOf(myKey) >= 0 : false,
     mine: myKey ? ch.owner === myKey : false,
     verified: !!ch.verified,
+    official: !!ch.official,
     created: ch.created || 0
   };
 }
@@ -399,6 +403,72 @@ function isOwnerKey(key) {
   return !!(user && user.owner);
 }
 
+const RIGHTS = ["moderator", "verifier", "botmaster"];
+const REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "🎉", "😮"];
+
+function rightsOf(user) {
+  const raw = user && Array.isArray(user.rights) ? user.rights : [];
+  return raw.filter((r) => RIGHTS.indexOf(r) >= 0);
+}
+
+function canByRight(session, right) {
+  if (!session) return false;
+  if (isOwnerKey(session.key) || isAdminKey(session.key)) return true;
+  return rightsOf(session.user).indexOf(right) >= 0;
+}
+
+function rightsOfKey(key) {
+  return rightsOf(store.users[key]);
+}
+
+function normalizeBotRules(input) {
+  const out = [];
+  if (!Array.isArray(input)) return out;
+  for (const raw of input.slice(0, 20)) {
+    if (!raw || typeof raw !== "object") continue;
+    const when = String(raw.when || "").trim().slice(0, 120);
+    const reply = String(raw.reply || "").trim().slice(0, 400);
+    if (!when || !reply) continue;
+    out.push({ when: when, reply: reply });
+  }
+  return out;
+}
+
+function botView(user) {
+  return {
+    nick: user.nick,
+    displayName: user.displayName || user.nick,
+    about: user.bio || "",
+    photo: user.photo || "",
+    avatar: user.avatar || 1,
+    owner: user.owner || "",
+    rules: Array.isArray(user.botRules) ? user.botRules : []
+  };
+}
+
+function myBots(key) {
+  const out = [];
+  for (const id of Object.keys(store.users)) {
+    const user = store.users[id];
+    if (!user.bot) continue;
+    if (user.owner !== key && !isOwnerKey(key) && !isAdminKey(key)) continue;
+    out.push(botView(user));
+  }
+  out.sort((a, b) => a.nick.localeCompare(b.nick));
+  return out;
+}
+
+function botReplyFor(bot, text) {
+  const rules = Array.isArray(bot.botRules) ? bot.botRules : [];
+  const asked = String(text || "").toLowerCase().trim();
+  for (const rule of rules) {
+    const when = String(rule.when || "").toLowerCase().trim();
+    if (!when) continue;
+    if (when === "*" || (asked && asked.indexOf(when) >= 0)) return String(rule.reply || "");
+  }
+  return "";
+}
+
 function groupOf(id) {
   const g = store.groups[String(id || "")];
   return g || null;
@@ -501,6 +571,8 @@ function profileOf(user) {
     hideOnline: !!user.hideOnline,
     oauth: user.oauth || "",
     bio: user.bio || "",
+    bot: !!user.bot,
+    rights: rightsOf(user),
     owner: isOwnerKey(key),
     admin: isAdminKey(key)
   };
@@ -519,6 +591,8 @@ function publicUsers(viewerKey) {
       avatar: seeContent ? user.avatar || 0 : 0,
       photo: seeContent ? user.photo || "" : "",
       bio: seeContent ? user.bio || "" : "",
+      bot: !!user.bot,
+      rights: rightsOf(user),
       status: seeContent ? user.status || "on" : "on",
       customStatus: seeContent ? user.customStatus || "" : "",
       online: seeOnline && isOnline(user),
@@ -545,6 +619,19 @@ function messagesFor(meKey, withNick) {
     if ((from === meKey && to === other) || (from === other && to === meKey)) result.push(m);
   }
   return result;
+}
+
+function canSeeMessage(session, message) {
+  if (!session || !message) return false;
+  const to = String(message.to || "");
+  const chId = channelIdOfTarget(to);
+  if (chId) return isChannelMember(chId, session.key);
+  const grId = groupIdOfTarget(to);
+  if (grId) return isGroupMember(grId, session.key);
+  if (!to) return true;
+  const from = message.from.toLowerCase();
+  const peer = to.toLowerCase();
+  return from === session.key || peer === session.key;
 }
 
 function fail(message) {
@@ -755,6 +842,8 @@ function handleApi(action, body) {
     };
     const token = newToken();
     store.tokens[token] = nick;
+    if (!store.channelMembers.priks) store.channelMembers.priks = [];
+    if (store.channelMembers.priks.indexOf(key) < 0) store.channelMembers.priks.push(key);
     saveStore();
     log("регистрация: " + nick + (phone ? " (телефон " + phone + ")" : ""));
     return { ok: true, nick: nick, token: token, profile: selfProfileOf(store.users[key]), admin: isAdminKey(key) };
@@ -800,6 +889,7 @@ function handleApi(action, body) {
     const user = store.users[key];
     const ban = banOf(key);
     if (ban) return fail(banText(ban));
+    if (user.bot) return fail("это бот — войти в него нельзя, с ним можно только переписываться");
     if (!user.hash) return fail("этот ник входит через Яндекс — нажми «Войти через Яндекс»");
     if (hashPassword(password, user.salt) !== user.hash) return fail("неверный пароль");
     const token = newToken();
@@ -899,10 +989,250 @@ function handleApi(action, body) {
       ts: Date.now()
     };
     if (img) message.img = img;
+    const replyId = Number(data.replyId) || 0;
+    if (replyId) {
+      const quoted = store.messages.find((m) => m.id === replyId);
+      if (quoted && canSeeMessage(session, quoted)) {
+        message.replyTo = {
+          id: quoted.id,
+          from: quoted.from,
+          text: String(quoted.text || "").slice(0, 120),
+          img: quoted.img ? 1 : 0
+        };
+      }
+    }
     store.messages.push(message);
     if (store.messages.length > 20000) store.messages = store.messages.slice(-15000);
+    let botAnswer = null;
+    if (to && target && to.indexOf("ch:") !== 0 && to.indexOf("g:") !== 0) {
+      const peer = store.users[target.toLowerCase()];
+      if (peer && peer.bot) {
+        const answer = botReplyFor(peer, text);
+        if (answer) {
+          botAnswer = {
+            id: store.nextId++,
+            from: peer.nick,
+            to: session.nick,
+            text: answer,
+            ts: Date.now(),
+            bot: true
+          };
+          if (message.id) botAnswer.replyTo = { id: message.id, from: message.from, text: String(text || "").slice(0, 120), img: img ? 1 : 0 };
+          store.messages.push(botAnswer);
+        }
+      }
+    }
+    saveStore();
+    if (botAnswer) return { ok: true, message: message, botMessage: botAnswer };
+    return { ok: true, message: message };
+  }
+
+  if (action === "official-post") {
+    if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("писать в официальный канал может только владелец");
+    const text = String(data.text || "").trim().slice(0, MAX_MESSAGE);
+    if (!text) return fail("пустой текст");
+    ensureOfficialChannel();
+    const message = {
+      id: store.nextId++,
+      from: session.nick,
+      to: "ch:priks",
+      text: text,
+      ts: Date.now()
+    };
+    if (data.pin) message.pin = true;
+    store.messages.push(message);
+    saveStore();
+    log("официальный канал: новая запись от " + session.nick);
+    return { ok: true, message: message };
+  }
+
+  if (action === "rights") {
+    if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("выдавать права может только владелец");
+    const nick = normalizeNick(data.nick);
+    const target = store.users[nick.toLowerCase()];
+    if (!target) return fail("нет такого пользователя");
+    if (target.nick.toLowerCase() === session.key) return fail("себе права не выдают");
+    if (isOwnerKey(target.nick.toLowerCase())) return fail("у владельца права уже все");
+    const asked = Array.isArray(data.rights) ? data.rights : [];
+    const next = [];
+    for (const raw of asked) {
+      const name = String(raw || "");
+      if (RIGHTS.indexOf(name) < 0) return fail("неизвестное право: " + name);
+      if (next.indexOf(name) < 0) next.push(name);
+    }
+    target.rights = next;
+    saveStore();
+    log("права " + target.nick + ": " + (next.length ? next.join(", ") : "сняты") + " — " + session.nick);
+    return { ok: true, nick: target.nick, rights: next, rightsList: RIGHTS };
+  }
+
+  if (action === "rights-list") {
+    return { ok: true, rights: RIGHTS };
+  }
+
+  if (action === "bots") {
+    const out = [];
+    for (const key of Object.keys(store.users)) {
+      const user = store.users[key];
+      if (!user.bot) continue;
+      if (user.owner !== session.key && !isOwnerKey(session.key) && !isAdminKey(session.key)) continue;
+      out.push(botView(user));
+    }
+    return { ok: true, bots: out };
+  }
+
+  if (action === "bot-create") {
+    if (!canByRight(session, "botmaster")) return fail("создавать ботов может бот-мастер");
+    const nick = normalizeNick(data.nick);
+    if (!validNick(nick)) return fail("ник бота: 2-20 символов, латиница, цифры, _ - .");
+    const key = nick.toLowerCase();
+    if (store.users[key]) return fail("этот ник уже занят");
+    if (banOf(key)) return fail("этот ник забанен");
+    const displayName = String(data.displayName || "").trim().slice(0, 40) || nick;
+    const about = String(data.about || "").trim().slice(0, 140);
+    const photo = data.photo ? imageRefOf(data.photo) : "";
+    const avatar = parseInt(data.avatar, 10);
+    const rules = normalizeBotRules(data.rules);
+    if (!rules.length) return fail("добавь хотя бы одно правило: на что отвечать");
+    store.users[key] = {
+      nick: nick,
+      displayName: displayName,
+      avatar: Number.isFinite(avatar) && avatar >= 1 && avatar <= 6 ? avatar : 1,
+      photo: photo,
+      bio: about,
+      bot: true,
+      botRules: rules,
+      owner: session.key,
+      rights: [],
+      status: "on",
+      customStatus: "",
+      hideOnline: false,
+      privacy: Object.assign({}, PRIVACY_DEFAULTS),
+      phone: "",
+      email: "",
+      emailVerified: false,
+      salt: "",
+      hash: "",
+      created: Date.now(),
+      lastSeen: Date.now()
+    };
+    saveStore();
+    log("бот создан: " + nick + " (правил " + rules.length + ") от " + session.nick);
+    return { ok: true, bot: botView(store.users[key]), bots: myBots(session.key) };
+  }
+
+  if (action === "bot-update") {
+    const nick = normalizeNick(data.nick);
+    const bot = store.users[nick.toLowerCase()];
+    if (!bot || !bot.bot) return fail("бот не найден");
+    if (bot.owner !== session.key && !isOwnerKey(session.key) && !isAdminKey(session.key)) {
+      return fail("менять бота может только его владелец");
+    }
+    if (data.displayName !== undefined) {
+      const name = String(data.displayName || "").trim().slice(0, 40);
+      bot.displayName = name || bot.nick;
+    }
+    if (data.about !== undefined) bot.bio = String(data.about || "").trim().slice(0, 140);
+    if (data.photo !== undefined) {
+      const raw = String(data.photo || "").trim();
+      if (!raw) bot.photo = "";
+      else {
+        const ref = imageRefOf(raw);
+        if (!ref) return fail("картинка не нашлась — загрузи фото заново");
+        bot.photo = ref;
+      }
+    }
+    if (data.avatar !== undefined) {
+      const av = parseInt(data.avatar, 10);
+      bot.avatar = Number.isFinite(av) && av >= 1 && av <= 6 ? av : 1;
+    }
+    if (data.rules !== undefined) {
+      const rules = normalizeBotRules(data.rules);
+      if (!rules.length) return fail("у бота должно остаться хотя бы одно правило");
+      bot.botRules = rules;
+    }
+    saveStore();
+    log("бот обновлён: " + bot.nick + " от " + session.nick);
+    return { ok: true, bot: botView(bot), bots: myBots(session.key) };
+  }
+
+  if (action === "bot-delete") {
+    const nick = normalizeNick(data.nick).toLowerCase();
+    const bot = store.users[nick];
+    if (!bot || !bot.bot) return fail("бот не найден");
+    if (bot.owner !== session.key && !isOwnerKey(session.key) && !isAdminKey(session.key)) {
+      return fail("удалить бота может только его владелец");
+    }
+    delete store.users[nick];
+    store.messages = store.messages.filter((m) => String(m.to || "").toLowerCase() !== nick);
+    saveStore();
+    log("бот удалён: " + nick + " от " + session.nick);
+    return { ok: true, bots: myBots(session.key) };
+  }
+
+  if (action === "notes") {
+    const mine = store.notes[session.key] || {};
+    return { ok: true, notes: mine };
+  }
+
+  if (action === "note-save") {
+    const nick = normalizeNick(data.nick);
+    const target = store.users[nick.toLowerCase()];
+    if (!target) return fail("нет такого пользователя");
+    const text = String(data.text || "").trim().slice(0, 500);
+    if (!store.notes[session.key]) store.notes[session.key] = {};
+    if (text) store.notes[session.key][target.nick.toLowerCase()] = text;
+    else delete store.notes[session.key][target.nick.toLowerCase()];
+    saveStore();
+    return { ok: true, notes: store.notes[session.key] };
+  }
+
+  if (action === "note-delete") {
+    const nick = normalizeNick(data.nick).toLowerCase();
+    if (store.notes[session.key]) delete store.notes[session.key][nick];
+    saveStore();
+    return { ok: true, notes: store.notes[session.key] || {} };
+  }
+
+  if (action === "message-edit") {
+    const message = store.messages.find((m) => m.id === Number(data.id));
+    if (!message) return fail("сообщение не найдено");
+    if (message.from.toLowerCase() !== session.key) return fail("менять можно только свои сообщения");
+    const text = String(data.text || "").trim();
+    if (!text) return fail("пустое сообщение");
+    if (text.length > MAX_MESSAGE) return fail("слишком длинное сообщение");
+    message.text = text;
+    message.edited = Date.now();
     saveStore();
     return { ok: true, message: message };
+  }
+
+  if (action === "message-delete") {
+    const message = store.messages.find((m) => m.id === Number(data.id));
+    if (!message) return fail("сообщение не найдено");
+    const mine = message.from.toLowerCase() === session.key;
+    if (!mine && !canByRight(session, "moderator")) return fail("удалять чужие сообщения может модератор");
+    store.messages = store.messages.filter((m) => m.id !== message.id);
+    saveStore();
+    log("сообщение " + message.id + " удалено — " + session.nick);
+    return { ok: true, id: message.id };
+  }
+
+  if (action === "reaction") {
+    const emoji = String(data.emoji || "");
+    if (REACTION_EMOJIS.indexOf(emoji) < 0) return fail("такая реакция не поддерживается");
+    const message = store.messages.find((m) => m.id === Number(data.id));
+    if (!message) return fail("сообщение не найдено");
+    if (!canSeeMessage(session, message)) return fail("нет доступа к сообщению");
+    if (!message.reacts || typeof message.reacts !== "object") message.reacts = {};
+    const list = Array.isArray(message.reacts[emoji]) ? message.reacts[emoji].slice() : [];
+    const idx = list.findIndex((n) => String(n).toLowerCase() === session.key);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(session.nick);
+    if (list.length) message.reacts[emoji] = list;
+    else delete message.reacts[emoji];
+    saveStore();
+    return { ok: true, message: message, reactions: REACTION_EMOJIS };
   }
 
   if (action === "channels") {
@@ -934,7 +1264,10 @@ function handleApi(action, body) {
     const id = String(data.id || "").trim();
     const ch = channelOf(id);
     if (!ch) return fail("канал не найден");
-    if (!store.channelMembers[id]) store.channelMembers[id] = [];
+  if (!store.channelMembers[id]) store.channelMembers[id] = [];
+  for (const key of Object.keys(store.users)) {
+    if (!store.users[key].bot && store.channelMembers[id].indexOf(key) < 0) store.channelMembers[id].push(key);
+  }
     if (!isChannelMember(id, session.key)) {
       store.channelMembers[id].push(session.key);
       saveStore();
@@ -1056,7 +1389,7 @@ function handleApi(action, body) {
   }
 
   if (action === "ban" || action === "unban" || action === "bans") {
-    if (!isAdminKey(session.key)) return fail("нет прав: нужен админ");
+    if (!canByRight(session, "moderator")) return fail("нет прав: нужен модератор");
   }
 
   if (action === "bans") {
@@ -1354,7 +1687,7 @@ function handleApi(action, body) {
   }
 
   if (action === "channel-verify") {
-    if (!isOwnerKey(session.key) && !isAdminKey(session.key)) return fail("верифицировать каналы может только владелец");
+    if (!canByRight(session, "verifier")) return fail("верифицировать каналы может только владелец или проверяющий");
     const id = String(data.id || "").trim();
     const ch = channelOf(id);
     if (!ch) return fail("канал не найден");
@@ -1700,7 +2033,50 @@ const server = http.createServer((req, res) => {
   serveStatic(req, res, pathname);
 });
 
+function ensureOfficialChannel() {
+  const id = "priks";
+  let created = false;
+  if (!store.channels[id]) {
+    store.channels[id] = {
+      id: id,
+      title: "Прикс · обновления",
+      about: "Официальный канал Прикса. Ведёт ИИ: здесь все обновления, новые функции и заметки о сборках.",
+      photo: "",
+      owner: OFFICIAL_OWNER,
+      official: true,
+      verified: true,
+      created: Date.now()
+    };
+    store.channelMembers[id] = [];
+    created = true;
+    log("создан официальный канал Прикса");
+  } else {
+    const ch = store.channels[id];
+    ch.official = true;
+    ch.verified = true;
+    if (!ch.title) ch.title = "Прикс · обновления";
+  }
+  if (!store.channelMembers[id]) store.channelMembers[id] = [];
+  if (created && !store.officialSeeded) {
+    const posts = [
+      "Привет! Это официальный канал Прикса. Здесь ИИ выкладывает все обновления — без слухов и опозданий.",
+      "Версия 7: круглые галочки верификации, номер в карточке, если он открыт, аватарки у каналов и групп.",
+      "Версия 8: права для людей, заметки о собеседниках, реакции, правка и удаление сообщений, ответы стрелкой и конструктор ботов."
+    ];
+    let ts = Date.now() - posts.length * 60000;
+    for (const text of posts) {
+      const from = store.users[OFFICIAL_OWNER] ? store.users[OFFICIAL_OWNER].nick : "Прикс";
+      store.messages.push({ id: store.nextId++, from: from, to: "ch:" + id, text: text, ts: ts });
+      ts += 60000;
+    }
+    store.officialSeeded = true;
+    log("официальный канал: " + posts.length + " записей");
+  }
+  saveStore();
+}
+
 loadStore();
+ensureOfficialChannel();
 server.listen(PORT, HOST, () => {
   log("Прикс-сервер слушает " + HOST + ":" + PORT);
   log("веб-папка: " + WEB_DIR);
