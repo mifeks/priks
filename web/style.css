@@ -648,7 +648,7 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
 .sets-main-head .back { display: none; }
 .sets-main-title { flex: 1; font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
 .sets-main-title::before {
-  content: "РїСЂРёРєСЃ В· РЅР°СЃС‚СЂРѕР№РєРё";
+  content: "Р С—РЎР‚Р С‘Р С”РЎРѓ Р’В· Р Р…Р В°РЎРѓРЎвЂљРЎР‚Р С•Р в„–Р С”Р С‘";
   display: block; font-family: var(--font-ui); font-size: .62rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .24em; color: var(--muted); margin-bottom: 5px;
 }
@@ -673,7 +673,7 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
   font-family: var(--font-display); font-size: .95rem; font-weight: 700;
   text-transform: none; letter-spacing: 0; color: var(--text); margin-bottom: 2px;
 }
-.pane .group-title::before { content: "вЂ” "; color: var(--accent); }
+.pane .group-title::before { content: "РІР‚вЂќ "; color: var(--accent); }
 .pane .row { padding: 12px 0; }
 .pane .row .t { font-size: .9rem; }
 .pane .row .d { font-size: .76rem; }
@@ -828,9 +828,10 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
 .msg-quote b { color: var(--text); font-weight: 600; display: block; font-size: .78rem; }
 .msg-out .msg-quote { background: rgba(0, 0, 0, .06); }
 .msg-tools {
-  position: absolute; top: -34px; right: 0; display: none; align-items: center; gap: 2px;
-  padding: 3px; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px; box-shadow: var(--shadow-lg); z-index: 5;
+  position: relative; display: none; align-items: center; gap: 1px;
+  margin-left: auto; padding: 2px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 9px; z-index: 5;
+  flex: 0 0 auto;
 }
 .msg:hover .msg-tools, .msg-tools.open { display: flex; }
 .msg-tools button {
@@ -840,7 +841,7 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
 .msg-tools button:hover { background: var(--panel2); }
 .msg-tools .dots { font-size: 1.1rem; }
 .msg-menu {
-  position: absolute; top: 34px; right: 0; min-width: 160px; z-index: 6;
+  position: absolute; top: calc(100% + 4px); right: 0; min-width: 160px; z-index: 6;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: var(--shadow-lg); padding: 4px; display: none;
 }
