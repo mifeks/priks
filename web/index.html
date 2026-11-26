@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -611,6 +611,19 @@
             </div>
           </div>
           <div class="card">
+            <div class="group-title">Права участников</div>
+            <div class="hint">Модератор — баны и удаление чужих сообщений. Проверяющий — верификация каналов. Бот-мастер — создание ботов.</div>
+            <label for="rights-nick">Ник</label>
+            <input id="rights-nick" maxlength="20" spellcheck="false" placeholder="bob">
+            <div class="info-rights" id="rights-box">
+              <label class="right-line"><input type="checkbox" data-right="moderator"><span>Модератор</span></label>
+              <label class="right-line"><input type="checkbox" data-right="verifier"><span>Проверяющий</span></label>
+              <label class="right-line"><input type="checkbox" data-right="botmaster"><span>Бот-мастер</span></label>
+            </div>
+            <div class="err" id="rights-err"></div>
+            <button class="btn primary wide" id="btnSaveRights" type="button">Выдать права</button>
+          </div>
+          <div class="card">
             <div class="group-title">Верификация каналов</div>
             <div class="hint">Галочка «проверен» видна всем рядом с названием канала.</div>
             <div id="mod-channels" class="folder-list"></div>
@@ -773,7 +786,7 @@
   </div>
 </div>
 
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
