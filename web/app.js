@@ -1130,6 +1130,302 @@
     }).catch(function () { toast("нет связи"); });
   }
 
+  var creatorTab = "users";
+  var creatorQuery = "";
+
+  function creatorDate(ts) {
+    if (!ts) return "—";
+    var d = new Date(ts);
+    return d.toLocaleDateString("ru-RU") + " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function loadCreatorPanel() {
+    var me = state.me || {};
+    var nav = $("setsCreator");
+    if (nav) nav.classList.toggle("hidden", !(me.owner || me.admin));
+    if (!(me.owner || me.admin)) return;
+    var list = $("creator-list");
+    if (list && !state.creator) list.innerHTML = '<div class="hint">загружаю…</div>';
+    api("admin-panel", { token: state.token }).then(function (res) {
+      if (!res || !res.ok) {
+        if (list) list.innerHTML = '<div class="hint">' + ((res && res.error) || "не удалось загрузить") + '</div>';
+        return;
+      }
+      state.creator = res;
+      renderCreatorStats();
+      renderCreatorList();
+    }).catch(function () {
+      if (list) list.innerHTML = '<div class="hint">нет связи</div>';
+    });
+  }
+
+  function renderCreatorStats() {
+    var box = $("creator-stats");
+    var data = state.creator;
+    if (!box || !data) return;
+    var s = data.stats || {};
+    box.innerHTML = "";
+    var items = [
+      ["аккаунты", s.users], ["люди", s.humans], ["боты", s.bots], ["онлайн", s.online],
+      ["каналы", s.channels], ["группы", s.groups], ["сообщения", s.messages],
+      ["баны", s.bans], ["муты", s.muted]
+    ];
+    for (var i = 0; i < items.length; i++) {
+      var b = mkNode("div", "stat-box");
+      b.appendChild(mkNode("b", "", String(items[i][1] == null ? 0 : items[i][1])));
+      b.appendChild(mkNode("span", "", items[i][0]));
+      box.appendChild(b);
+    }
+  }
+
+  function creatorMatch(nick, name, extra) {
+    if (!creatorQuery) return true;
+    var hay = (String(nick || "") + " " + String(name || "") + " " + String(extra || "")).toLowerCase();
+    return hay.indexOf(creatorQuery) >= 0;
+  }
+
+  function renderCreatorList() {
+    var box = $("creator-list");
+    var data = state.creator;
+    if (!box || !data) return;
+    box.innerHTML = "";
+    var rows = [];
+    if (creatorTab === "users" || creatorTab === "bots") {
+      var wantBot = creatorTab === "bots";
+      for (var i = 0; i < (data.users || []).length; i++) {
+        var u = data.users[i];
+        if (!!u.bot !== wantBot) continue;
+        if (!creatorMatch(u.nick, u.displayName, u.email)) continue;
+        rows.push(creatorUserRow(u));
+      }
+    } else if (creatorTab === "channels") {
+      for (var c = 0; c < (data.channels || []).length; c++) {
+        var ch = data.channels[c];
+        if (!creatorMatch(ch.title, ch.owner)) continue;
+        rows.push(creatorChannelRow(ch));
+      }
+    } else if (creatorTab === "groups") {
+      for (var g = 0; g < (data.groups || []).length; g++) {
+        var gr = data.groups[g];
+        if (!creatorMatch(gr.title, gr.owner)) continue;
+        rows.push(creatorGroupRow(gr));
+      }
+    } else if (creatorTab === "bans") {
+      for (var b = 0; b < (data.bans || []).length; b++) {
+        var ban = data.bans[b];
+        if (!creatorMatch(ban.nick, ban.reason, ban.by)) continue;
+        rows.push(creatorBanRow(ban));
+      }
+    }
+    if (!rows.length) { box.appendChild(mkNode("div", "hint", "тут пока пусто")); return; }
+    for (var r = 0; r < rows.length; r++) box.appendChild(rows[r]);
+  }
+
+  function creatorBadge(text, cls) {
+    return mkNode("span", "cbadge" + (cls ? " " + cls : ""), text);
+  }
+
+  function creatorUserRow(u) {
+    var card = mkNode("div", "crow-card");
+    var row = mkNode("div", "crow");
+
+    var open = mkNode("button", "crow-open");
+    open.type = "button";
+    open.onclick = function () { if (!u.bot) openPerson(u.nick); };
+    var ava = mkNode("span", "avatar sm");
+    applyAvatar(ava, u.nick, u.avatar || 1, u.photo || "");
+    open.appendChild(ava);
+
+    var text = mkNode("div", "crow-text");
+    var name = mkNode("div", "crow-name", u.displayName || u.nick);
+    if (u.owner) name.appendChild(creatorBadge("владелец", "owner"));
+    if (u.admin) name.appendChild(creatorBadge("админ", "admin"));
+    if (u.bot) name.appendChild(creatorBadge("бот", "bot"));
+    if (u.online) name.appendChild(creatorBadge("онлайн", "online"));
+    if (u.banned) name.appendChild(creatorBadge(u.banned.until ? "бан до " + creatorDate(u.banned.until) : "бан навсегда", "banned"));
+    if (u.mutedUntil) name.appendChild(creatorBadge("мут до " + creatorDate(u.mutedUntil), "muted"));
+    for (var r = 0; r < (u.rights || []).length; r++) {
+      name.appendChild(creatorBadge(u.rights[r] === "moderator" ? "модератор" : u.rights[r] === "verifier" ? "проверяющий" : "бот-мастер"));
+    }
+    text.appendChild(name);
+    text.appendChild(mkNode("div", "crow-sub", "@" + u.nick + " · создан " + creatorDate(u.created) + " · был " + creatorDate(u.lastSeen) + " · сообщений " + (u.sent || 0)));
+    open.appendChild(text);
+    row.appendChild(open);
+
+    var actions = mkNode("div", "crow-actions");
+    var more = mkNode("button", "btn ghost small", "Действия");
+    more.type = "button";
+    actions.appendChild(more);
+    row.appendChild(actions);
+    card.appendChild(row);
+
+    var panel = mkNode("div", "crow-panel hidden");
+    var form = mkNode("div", "crow-form");
+    var duration = document.createElement("select");
+    var opts = [["1", "1 час"], ["24", "24 часа"], ["168", "7 дней"], ["720", "30 дней"], ["0", "навсегда"]];
+    for (var o = 0; o < opts.length; o++) {
+      var opt = document.createElement("option");
+      opt.value = opts[o][0];
+      opt.textContent = opts[o][1];
+      duration.appendChild(opt);
+    }
+    var reason = document.createElement("input");
+    reason.placeholder = "причина (не обязательно)";
+    reason.maxLength = 120;
+    reason.spellcheck = false;
+    form.appendChild(duration);
+    form.appendChild(reason);
+    panel.appendChild(form);
+
+    var buttons = mkNode("div", "crow-buttons");
+    if (u.banned) {
+      buttons.appendChild(creatorBtn("Разбанить", "primary", function () { creatorUnban(u.nick); }));
+    } else {
+      buttons.appendChild(creatorBtn("Забанить на срок", "primary", function () {
+        creatorBan(u.nick, Number(duration.value) || 0, reason.value);
+      }));
+    }
+    if (u.mutedUntil) {
+      buttons.appendChild(creatorBtn("Снять мут", "ghost", function () { creatorMute(u.nick, 0); }));
+    } else {
+      buttons.appendChild(creatorBtn("Заглушить", "ghost", function () {
+        var hours = Number(duration.value) || 0;
+        creatorMute(u.nick, hours ? hours * 60 : 60 * 24);
+      }));
+    }
+    if (!u.bot && !u.owner) {
+      buttons.appendChild(creatorBtn(u.banned || u.mutedUntil ? "Снять всё" : "Снять блокировки", "ghost", function () {
+        creatorUnban(u.nick);
+        creatorMute(u.nick, 0);
+      }));
+    }
+    if (!u.owner && !u.bot) {
+      buttons.appendChild(creatorBtn(u.rights && u.rights.indexOf("moderator") >= 0 ? "Снять модератора" : "Сделать модератором", "ghost", function () {
+        var next = (u.rights || []).filter(function (x) { return x !== "moderator"; });
+        if ((u.rights || []).indexOf("moderator") < 0) next.push("moderator");
+        creatorRights(u.nick, next);
+      }));
+      buttons.appendChild(creatorBtn("Удалить аккаунт", "ghost", function () { creatorDelete(u.nick); }));
+    }
+    if (!u.bot) {
+      buttons.appendChild(creatorBtn("Карточка", "ghost", function () { closeSettings(); openPerson(u.nick); }));
+    }
+    panel.appendChild(buttons);
+    card.appendChild(panel);
+
+    more.onclick = function (e) {
+      e.stopPropagation();
+      panel.classList.toggle("hidden");
+    };
+    return card;
+  }
+
+  function creatorChannelRow(ch) {
+    var row = mkNode("div", "crow");
+    var open = mkNode("button", "crow-open");
+    open.type = "button";
+    open.onclick = function () { closeSettings(); openChannelInfo("ch:" + ch.id); };
+    var ava = mkNode("span", "avatar sm chan");
+    paintChatAvatar(ava, ch.photo, "#");
+    open.appendChild(ava);
+    var text = mkNode("div", "crow-text");
+    var name = mkNode("div", "crow-name", ch.title);
+    if (ch.verified) name.appendChild(verifBadge(14));
+    if (ch.official) name.appendChild(creatorBadge("официальный", "owner"));
+    if (ch.admins && ch.admins.length) name.appendChild(creatorBadge("админов " + ch.admins.length, "admin"));
+    text.appendChild(name);
+    text.appendChild(mkNode("div", "crow-sub", "@" + ch.owner + " · участников " + ch.members + " · создан " + creatorDate(ch.created)));
+    open.appendChild(text);
+    row.appendChild(open);
+    var actions = mkNode("div", "crow-actions");
+    actions.appendChild(creatorBtn(ch.verified ? "Снять проверку" : "Проверить", "ghost", function () { verifyChannel(ch.id, !ch.verified); }));
+    row.appendChild(actions);
+    return row;
+  }
+
+  function creatorGroupRow(gr) {
+    var row = mkNode("div", "crow");
+    var open = mkNode("button", "crow-open");
+    open.type = "button";
+    open.onclick = function () { closeSettings(); openGroupInfo("g:" + gr.id); };
+    var ava = mkNode("span", "avatar sm grp");
+    paintChatAvatar(ava, gr.photo, String(gr.title).charAt(0).toUpperCase());
+    open.appendChild(ava);
+    var text = mkNode("div", "crow-text");
+    text.appendChild(mkNode("div", "crow-name", gr.title));
+    text.appendChild(mkNode("div", "crow-sub", "@" + gr.owner + " · участников " + gr.members + " · создана " + creatorDate(gr.created)));
+    open.appendChild(text);
+    row.appendChild(open);
+    return row;
+  }
+
+  function creatorBanRow(ban) {
+    var row = mkNode("div", "crow");
+    var text = mkNode("div", "crow-text");
+    var name = mkNode("div", "crow-name", "@" + ban.nick + " ");
+    name.appendChild(creatorBadge(ban.until ? "до " + creatorDate(ban.until) : "навсегда", "banned"));
+    text.appendChild(name);
+    text.appendChild(mkNode("div", "crow-sub", (ban.reason || "без причины") + " · выдал @" + (ban.by || "—") + " · " + creatorDate(ban.ts)));
+    row.appendChild(text);
+    var actions = mkNode("div", "crow-actions");
+    actions.appendChild(creatorBtn("Разбанить", "primary", function () { creatorUnban(ban.nick); }));
+    row.appendChild(actions);
+    return row;
+  }
+
+  function creatorBtn(label, kind, handler) {
+    var b = mkNode("button", "btn " + (kind || "ghost") + " small", label);
+    b.type = "button";
+    b.onclick = function (e) { e.stopPropagation(); handler(); };
+    return b;
+  }
+
+  function creatorReload() {
+    state.creator = null;
+    loadCreatorPanel();
+  }
+
+  function creatorBan(nick, hours, reason) {
+    api("ban", { token: state.token, nick: nick, hours: hours, reason: String(reason || "") }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+      toast(hours ? "@" + nick + " забанен на " + hours + " ч" : "@" + nick + " забанен навсегда");
+      creatorReload();
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function creatorUnban(nick) {
+    api("unban", { token: state.token, nick: nick }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+      toast("@" + nick + " разбанен");
+      creatorReload();
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function creatorMute(nick, minutes) {
+    api("admin-mute", { token: state.token, nick: nick, minutes: minutes }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+      toast(minutes ? "@" + nick + " заглушён" : "мут с @" + nick + " снят");
+      creatorReload();
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function creatorRights(nick, rights) {
+    api("rights", { token: state.token, nick: nick, rights: rights }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+      toast("права @" + nick + " обновлены");
+      creatorReload();
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function creatorDelete(nick) {
+    if (!window.confirm("Удалить аккаунт @" + nick + "? Действие необратимое.")) return;
+    api("admin-delete", { token: state.token, nick: nick }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
+      toast("@" + nick + " удалён");
+      creatorReload();
+    }).catch(function () { toast("нет связи"); });
+  }
+
   function syncMediaUi() {
     if ($("media-auto")) $("media-auto").checked = settings.photoAuto !== false;
     if ($("media-btn")) $("media-btn").checked = settings.photoShowBtn !== false;
@@ -2411,6 +2707,7 @@
     security: "Безопасность",
     blocked: "Чёрный список",
     folders: "Папки",
+    creator: "Панель создателя",
     moderation: "Модерация",
     bots: "Боты",
     media: "Медиа",
@@ -2440,6 +2737,7 @@
     if (pane === "security" || pane === "blocked") syncBlockedUi();
     if (pane === "folders") syncFoldersUi();
     if (pane === "moderation") syncModerationUi();
+    if (pane === "creator") loadCreatorPanel();
     if (pane === "bots") syncBotsUi();
     if (pane === "media") syncMediaUi();
     if (pane === "data") syncDataUi();
@@ -3579,6 +3877,23 @@
     if ($("btnBotSave")) $("btnBotSave").addEventListener("click", saveBot);
     if ($("btnBotReset")) $("btnBotReset").addEventListener("click", resetBotForm);
     if ($("btnSaveRights")) $("btnSaveRights").addEventListener("click", saveRightsFromPane);
+    if ($("btnCreatorReload")) $("btnCreatorReload").addEventListener("click", creatorReload);
+    if ($("creator-search")) {
+      $("creator-search").addEventListener("input", function () {
+        creatorQuery = this.value.trim().toLowerCase();
+        renderCreatorList();
+      });
+    }
+    if ($("creator-tabs")) {
+      var ctabs = $("creator-tabs").querySelectorAll(".seg-btn");
+      for (var ci = 0; ci < ctabs.length; ci++) {
+        ctabs[ci].addEventListener("click", function () {
+          creatorTab = this.getAttribute("data-ctab") || "users";
+          for (var cj = 0; cj < ctabs.length; cj++) ctabs[cj].classList.toggle("active", ctabs[cj] === this);
+          renderCreatorList();
+        });
+      }
+    }
     if ($("btnEmoji")) $("btnEmoji").addEventListener("click", function (e) {
       e.stopPropagation();
       toggleEmojiPanel();
