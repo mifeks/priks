@@ -252,6 +252,24 @@ function isChannelMember(id, key) {
   return channelMembersOf(id).indexOf(key) >= 0;
 }
 
+function channelAdminsOf(ch) {
+  const list = ch && Array.isArray(ch.admins) ? ch.admins : [];
+  return list.filter((k) => typeof k === "string" && k);
+}
+
+function isChannelAdmin(chOrId, key) {
+  const ch = typeof chOrId === "string" ? channelOf(chOrId) : chOrId;
+  if (!ch || !key) return false;
+  if (ch.owner === key) return true;
+  return channelAdminsOf(ch).indexOf(key) >= 0;
+}
+
+function canPostToChannel(chOrId, key) {
+  if (!key) return false;
+  if (isChannelAdmin(chOrId, key)) return true;
+  return isAdminKey(key) || isOwnerKey(key);
+}
+
 function channelOf(id) {
   const ch = store.channels[String(id || "")];
   return ch || null;
@@ -266,12 +284,15 @@ function channelIdOfTarget(to) {
 
 function publicChannel(ch, myKey) {
   const members = channelMembersOf(ch.id);
+  const admins = channelAdminsOf(ch);
   return {
     id: ch.id,
     title: ch.title,
     about: ch.about || "",
     photo: ch.photo || "",
     owner: ch.owner,
+    admins: admins,
+    canPost: myKey ? canPostToChannel(ch, myKey) : false,
     members: members.length,
     joined: myKey ? members.indexOf(myKey) >= 0 : false,
     mine: myKey ? ch.owner === myKey : false,
@@ -960,6 +981,7 @@ function handleApi(action, body) {
     if (to.indexOf("ch:") === 0) {
       if (!chId) return fail("канал не найден");
       if (!isChannelMember(chId, session.key)) return fail("сначала вступи в канал");
+      if (!canPostToChannel(chId, session.key)) return fail("в канал пишут только владелец и назначенные админы");
       target = "ch:" + chId;
     } else if (to.indexOf("g:") === 0) {
       if (!grId) return fail("группа не найдена");
@@ -1283,6 +1305,7 @@ function handleApi(action, body) {
     const ch = channelOf(id);
     if (!ch) return fail("канал не найден");
     store.channelMembers[id] = channelMembersOf(id).filter((k) => k !== session.key);
+    if (Array.isArray(ch.admins)) ch.admins = ch.admins.filter((k) => k !== session.key);
     saveStore();
     return { ok: true, channels: myChannels(session.key) };
   }
@@ -1686,6 +1709,31 @@ function handleApi(action, body) {
     saveStore();
     log("аватар группы " + id + (g.photo ? " обновлён" : " снят") + " — " + session.nick);
     return { ok: true, group: publicGroup(g, session.key), groups: myGroups(session.key) };
+  }
+
+  if (action === "channel-admin") {
+    const id = String(data.id || "").trim();
+    const ch = channelOf(id);
+    if (!ch) return fail("канал не найден");
+    if (ch.owner !== session.key && !isAdminKey(session.key) && !isOwnerKey(session.key)) {
+      return fail("назначать админов может только владелец канала");
+    }
+    const nick = normalizeNick(data.nick || "");
+    if (!nick) return fail("нужен ник");
+    const peer = store.users[nick];
+    if (!peer) return fail("нет такого пользователя");
+    if (peer.bot) return fail("бот не может быть админом канала");
+    if (nick === ch.owner) return fail("владелец канала и так пишет");
+    const on = data.admin !== false;
+    if (on && !isChannelMember(id, nick)) {
+      store.channelMembers[id] = channelMembersOf(id).concat([nick]);
+    }
+    const admins = channelAdminsOf(ch).filter((k) => k !== nick);
+    if (on) admins.push(nick);
+    ch.admins = admins;
+    saveStore();
+    log("канал " + id + ": " + nick + (on ? " назначен админом" : " больше не админ") + " — " + session.nick);
+    return { ok: true, channel: publicChannel(ch, session.key), admins: admins, channels: myChannels(session.key) };
   }
 
   if (action === "channel-verify") {
