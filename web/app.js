@@ -1779,10 +1779,34 @@
     paintChatHead(state.chat || "");
   }
 
+  function syncComposer() {
+    var form = el.sendForm || $("sendForm");
+    var note = $("composerNote");
+    if (!form) return;
+    var chat = state.chat;
+    if (!chat || !isChannelTarget(chat)) {
+      form.classList.remove("hidden");
+      if (note) note.classList.add("hidden");
+      return;
+    }
+    var ch = channelOf(chat);
+    var can = !!(ch && ch.canPost);
+    form.classList.toggle("hidden", !can);
+    if (note) {
+      note.classList.toggle("hidden", can);
+      if (!can) {
+        note.textContent = (ch && ch.joined)
+          ? "Писать в канал могут владелец и админы — ты можешь читать."
+          : "Подпишись на канал, чтобы читать новые записи.";
+      }
+    }
+  }
+
   function openChat(nick) {
     state.chat = nick || "";
     state.unread[state.chat.toLowerCase()] = 0;
     paintChatHead(state.chat);
+    syncComposer();
     el.app.classList.add("show-chat");
     renderChatList();
     loadHistory(state.chat);
@@ -2879,8 +2903,66 @@
     var rows = mkNode("div", "info-rows");
     rows.appendChild(infoRow("код канала", ch.id));
     rows.appendChild(infoRow("владелец", "@" + (ch.owner || "—")));
+    rows.appendChild(infoRow("писать могут", "владелец и админы"));
     rows.appendChild(infoRow("проверен", ch.verified ? "да, владельцем Прикса" : "нет"));
     body.appendChild(rows);
+
+    if (ch.mine || (state.me && (state.me.owner || state.me.admin))) {
+      var adminBlock = mkNode("div", "info-rows");
+      adminBlock.appendChild(mkNode("div", "group-title", "Админы канала"));
+      adminBlock.appendChild(mkNode("div", "hint", "Писать в канал могут владелец и назначенные админы. Остальные только читают."));
+      var adminList = mkNode("div", "admin-list");
+      var admins = ch.admins || [];
+      if (!admins.length) adminList.appendChild(mkNode("div", "hint", "админов пока нет"));
+      for (var a = 0; a < admins.length; a++) {
+        (function (key) {
+          var line = mkNode("div", "admin-line");
+          line.appendChild(mkNode("span", "admin-nick", "@" + key));
+          var off = mkNode("button", "btn ghost small", "Снять");
+          off.type = "button";
+          off.onclick = function () { setChannelAdmin(ch.id, key, false); };
+          line.appendChild(off);
+          adminList.appendChild(line);
+        })(admins[a]);
+      }
+      adminBlock.appendChild(adminList);
+      var addRow = mkNode("div", "admin-add");
+      var addInput = document.createElement("input");
+      addInput.id = "chan-admin-nick";
+      addInput.maxLength = 20;
+      addInput.placeholder = "ник";
+      addInput.spellcheck = false;
+      var addBtn = mkNode("button", "btn primary small", "Назначить");
+      addBtn.type = "button";
+      addBtn.onclick = function () { setChannelAdmin(ch.id, addInput.value, true); };
+      addRow.appendChild(addInput);
+      addRow.appendChild(addBtn);
+      adminBlock.appendChild(addRow);
+      var adminErr = mkNode("div", "err");
+      adminErr.id = "chan-admin-err";
+      adminBlock.appendChild(adminErr);
+      body.appendChild(adminBlock);
+    }
+  }
+
+  function setChannelAdmin(id, nickRaw, on) {
+    var err = $("chan-admin-err");
+    var nick = String(nickRaw || "").trim().replace(/^@+/, "").toLowerCase();
+    if (err) err.textContent = "";
+    if (!nick) { if (err) err.textContent = "введи ник"; return; }
+    api("channel-admin", { token: state.token, id: id, nick: nick, admin: !!on }).then(function (res) {
+      if (!res || !res.ok) { if (err) err.textContent = (res && res.error) || "не получилось"; return; }
+      var list = res.channels || state.channels || [];
+      var seen = false;
+      for (var i = 0; i < list.length; i++) if (list[i].id === id) { list[i] = res.channel || list[i]; seen = true; }
+      if (!seen && res.channel) list.push(res.channel);
+      state.channels = list;
+      closeInfo();
+      openChannelInfo("ch:" + id);
+      renderChatList();
+      syncComposer();
+      toast(on ? "@" + nick + " теперь админ канала" : "@" + nick + " больше не админ");
+    }).catch(function () { if (err) err.textContent = "нет связи"; });
   }
 
   function openGroupInfo(target) {
@@ -2983,6 +3065,7 @@
       if (!res || !res.ok) return;
       state.channels = res.channels || [];
       renderChatList();
+      syncComposer();
     }).catch(function () { });
   }
 
