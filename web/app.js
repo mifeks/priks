@@ -66,6 +66,11 @@
     polling: false,
     alive: false,
     yandexReady: null,
+    notes: {},
+    reply: null,
+    editing: 0,
+    bots: [],
+    botEditing: "",
     step: 1,
     reg: { phone: "", name: "", nick: "", avatar: 1, password: "", email: "", birth: "" },
     toastTimer: 0
@@ -467,6 +472,10 @@
       state.me.owner = !!p.owner;
       state.me.admin = !!p.admin;
     }
+    if (p.rights !== undefined) {
+      state.me = state.me || {};
+      state.me.rights = Array.isArray(p.rights) ? p.rights.slice() : [];
+    }
     if (p.bio !== undefined) {
       state.account = state.account || {};
       state.account.bio = p.bio || "";
@@ -862,8 +871,181 @@
     toast("Папка «" + folder.title + "» сохранена");
   }
 
-  function syncModerationUi() {
+  function addBotRuleRow(when, reply) {
+    var box = $("bot-rules");
+    if (!box) return;
+    var row = mkNode("div", "bot-rule");
+    var whenIn = document.createElement("input");
+    whenIn.className = "bot-when";
+    whenIn.placeholder = "фраза: привет";
+    whenIn.maxLength = 120;
+    whenIn.value = when || "";
+    var replyIn = document.createElement("input");
+    replyIn.className = "bot-reply";
+    replyIn.placeholder = "ответ бота";
+    replyIn.maxLength = 400;
+    replyIn.value = reply || "";
+    var del = mkNode("button", "icon-btn", "×");
+    del.type = "button";
+    del.title = "убрать правило";
+    del.onclick = function () { box.removeChild(row); };
+    row.appendChild(whenIn);
+    row.appendChild(replyIn);
+    row.appendChild(del);
+    box.appendChild(row);
+  }
+
+  function collectBotRules() {
+    var box = $("bot-rules");
+    var out = [];
+    if (!box) return out;
+    var whens = box.querySelectorAll(".bot-when");
+    var replies = box.querySelectorAll(".bot-reply");
+    for (var i = 0; i < whens.length; i++) {
+      var when = String(whens[i].value || "").trim();
+      var reply = String((replies[i] || {}).value || "").trim();
+      if (!when || !reply) continue;
+      out.push({ when: when, reply: reply });
+    }
+    return out;
+  }
+
+  function canBuildBots() {
     var me = state.me || {};
+    return !!(me.owner || me.admin || myRights().indexOf("botmaster") >= 0);
+  }
+
+  function syncBotsUi() {
+    var box = $("bot-rules");
+    var me = state.me || {};
+    var role = $("bot-role");
+    if (role) role.textContent = me.owner ? "владелец — можно всё" : canBuildBots() ? "бот-мастер — можно создавать" : "нужно право «бот-мастер»";
+    if (box && !box.children.length) addBotRuleRow("привет", "Привет! Я бот Прикса.");
+    if ($("bot-err")) $("bot-err").textContent = canBuildBots() ? "" : "Создавать ботов может бот-мастер — попроси владельца выдать право.";
+    loadBotList();
+  }
+
+  function loadBotList() {
+    var list = $("bot-list");
+    if (!list) return;
+    api("bots", { token: state.token }).then(function (res) {
+      if (!res || !res.ok) {
+        list.innerHTML = '<div class="hint">' + ((res && res.error) || "боты не загрузились") + "</div>";
+        return;
+      }
+      state.bots = res.bots || [];
+      renderBotList();
+    }).catch(function () {
+      list.innerHTML = '<div class="hint">нет связи</div>';
+    });
+  }
+
+  function renderBotList() {
+    var list = $("bot-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!state.bots.length) {
+      list.innerHTML = '<div class="hint">Пока нет ботов — собери первого выше</div>';
+      return;
+    }
+    for (var i = 0; i < state.bots.length; i++) {
+      (function (bot) {
+        var row = mkNode("div", "bot-row");
+        var text = mkNode("div", "");
+        text.appendChild(mkNode("div", "t", bot.displayName || bot.nick));
+        text.appendChild(mkNode("div", "d", "@" + bot.nick + " · правил " + (bot.rules || []).length));
+        row.appendChild(text);
+        var edit = mkNode("button", "btn ghost small", "Изменить");
+        edit.type = "button";
+        edit.onclick = function () { fillBotForm(bot); };
+        row.appendChild(edit);
+        var del = mkNode("button", "btn ghost small", "Удалить");
+        del.type = "button";
+        del.onclick = function () { deleteBot(bot.nick); };
+        row.appendChild(del);
+        list.appendChild(row);
+      })(state.bots[i]);
+    }
+  }
+
+  function fillBotForm(bot) {
+    state.botEditing = bot.nick;
+    if ($("bot-nick")) { $("bot-nick").value = bot.nick; $("bot-nick").disabled = true; }
+    if ($("bot-name")) $("bot-name").value = bot.displayName || "";
+    if ($("bot-about")) $("bot-about").value = bot.about || "";
+    var box = $("bot-rules");
+    if (box) {
+      box.innerHTML = "";
+      var rules = bot.rules || [];
+      for (var i = 0; i < rules.length; i++) addBotRuleRow(rules[i].when, rules[i].reply);
+      if (!rules.length) addBotRuleRow("", "");
+    }
+    if ($("bot-err")) $("bot-err").textContent = "";
+  }
+
+  function resetBotForm() {
+    state.botEditing = "";
+    if ($("bot-nick")) { $("bot-nick").value = ""; $("bot-nick").disabled = false; }
+    if ($("bot-name")) $("bot-name").value = "";
+    if ($("bot-about")) $("bot-about").value = "";
+    var box = $("bot-rules");
+    if (box) { box.innerHTML = ""; addBotRuleRow("привет", "Привет! Я бот Прикса."); }
+    if ($("bot-err")) $("bot-err").textContent = "";
+  }
+
+  function saveBot() {
+    var err = $("bot-err");
+    if (!canBuildBots()) {
+      if (err) err.textContent = "Нужно право «бот-мастер»: попроси владельца выдать его в карточке пользователя.";
+      return;
+    }
+    var nick = $("bot-nick") ? $("bot-nick").value.trim() : "";
+    var name = $("bot-name") ? $("bot-name").value.trim() : "";
+    var about = $("bot-about") ? $("bot-about").value.trim() : "";
+    var rules = collectBotRules();
+    if (err) err.textContent = "";
+    if (!state.botEditing && !/^[A-Za-z0-9_.-]{2,20}$/.test(nick)) {
+      if (err) err.textContent = "ник бота: 2-20 символов, латиница, цифры, _ - .";
+      return;
+    }
+    if (!name) {
+      if (err) err.textContent = "придумай имя бота";
+      return;
+    }
+    if (!rules.length) {
+      if (err) err.textContent = "нужно хотя бы одно правило: фраза и ответ";
+      return;
+    }
+    var editing = state.botEditing;
+    var req = editing
+      ? api("bot-update", { token: state.token, nick: editing, displayName: name, about: about, rules: rules })
+      : api("bot-create", { token: state.token, nick: nick, displayName: name, about: about, rules: rules });
+    req.then(function (res) {
+      if (!res || !res.ok) {
+        if (err) err.textContent = (res && res.error) || "бот не сохранился";
+        return;
+      }
+      state.bots = res.bots || [];
+      renderBotList();
+      toast(editing ? "бот обновлён" : "бот создан: @" + (res.bot && res.bot.nick));
+      if (!editing) resetBotForm();
+    }).catch(function () {
+      if (err) err.textContent = "нет связи";
+    });
+  }
+
+  function deleteBot(nick) {
+    if (!window.confirm("Удалить бота @" + nick + "?")) return;
+    api("bot-delete", { token: state.token, nick: nick }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не удалился"); return; }
+      state.bots = res.bots || [];
+      renderBotList();
+      resetBotForm();
+      toast("бот удалён");
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function syncModerationUi() {    var me = state.me || {};
     var role = $("mod-role");
     if (role) {
       role.textContent = me.owner ? "владелец Прикса" : (me.admin ? "администратор" : "обычный участник");
@@ -895,13 +1077,7 @@
           var t = document.createElement("div");
           t.className = "t";
           t.textContent = ch.title;
-          if (ch.verified) {
-            var vt = document.createElement("span");
-            vt.className = "verif";
-            vt.textContent = "✓";
-            vt.title = "канал верифицирован";
-            t.appendChild(vt);
-          }
+          if (ch.verified) t.appendChild(verifBadge(14));
           var d = document.createElement("div");
           d.className = "d";
           d.textContent = ch.verified ? "проверен" : "не проверен";
@@ -1098,6 +1274,7 @@
     loadFriends();
     loadChannels();
     loadGroups();
+    loadNotes();
     poll();
     var askedPane = "";
     try { askedPane = new URLSearchParams(location.search).get("pane") || ""; } catch (e) { }
@@ -1384,14 +1561,7 @@
         var chName = document.createElement("span");
         chName.className = "chat-item-name";
         chName.textContent = ch.title;
-        if (ch.verified) {
-          var chTick = document.createElement("span");
-          chTick.className = "verif";
-          chTick.textContent = "✓";
-          chTick.title = "канал верифицирован";
-          chTick.setAttribute("aria-label", "канал верифицирован");
-          chName.appendChild(chTick);
-        }
+        if (ch.verified) chName.appendChild(verifBadge(15));
         var chLast = document.createElement("span");
         chLast.className = "chat-item-last";
         if (chCount > 0) chLast.textContent = chCount + " новых";
@@ -1547,14 +1717,7 @@
     el.chatSub.textContent = "";
     if (ch) {
       el.chatTitle.textContent = ch.title;
-      if (ch.verified) {
-        var tick = document.createElement("span");
-        tick.className = "verif";
-        tick.textContent = "✓";
-        tick.title = "канал верифицирован";
-        tick.setAttribute("aria-label", "канал верифицирован");
-        el.chatTitle.appendChild(tick);
-      }
+      if (ch.verified) el.chatTitle.appendChild(verifBadge(17));
       el.chatSub.textContent = "канал · " + ch.members + " участн.";
       el.chatAvatar.className = "avatar small chan";
       el.chatAvatar.style.color = "";
@@ -1632,6 +1795,21 @@
       var m = list[i];
       var wrap = document.createElement("div");
       wrap.className = "msg " + (isMine(m) ? "msg-out" : "msg-in");
+      if (m.img && !m.text) wrap.classList.add("msg-photo");
+
+      var head = document.createElement("div");
+      head.className = "msg-head";
+      if (!isMine(m)) {
+        var author = findUser(m.from) || {};
+        var ava = document.createElement("span");
+        ava.className = "msg-av";
+        applyAvatar(ava, m.from, author.avatar || 1, author.photo || "");
+        ava.title = "открыть профиль";
+        ava.onclick = (function (nick) {
+          return function () { openPerson(nick); };
+        })(m.from);
+        head.appendChild(ava);
+      }
 
       var meta = document.createElement("div");
       meta.className = "msg-meta";
@@ -1643,7 +1821,10 @@
           return function () { openPerson(nick); };
         })(m.from);
       }
-      wrap.appendChild(meta);
+      head.appendChild(meta);
+      wrap.appendChild(head);
+
+      if (m.replyTo) wrap.appendChild(replyQuoteNode(m.replyTo));
 
       var body = document.createElement("div");
       body.className = "msg-body";
@@ -1676,10 +1857,20 @@
       if (!m.text && !m.img) body.textContent = "";
       wrap.appendChild(body);
 
+      if (m.reacts) wrap.appendChild(reactionsRow(m));
+
       var time = document.createElement("div");
       time.className = "msg-time";
       time.textContent = timeText(m.ts);
+      if (m.edited) {
+        var mark = document.createElement("span");
+        mark.className = "msg-edited";
+        mark.textContent = "изменено";
+        time.appendChild(mark);
+      }
       wrap.appendChild(time);
+
+      wrap.appendChild(messageTools(m));
 
       el.messages.appendChild(wrap);
     }
@@ -1697,6 +1888,177 @@
       var grown = el.messages.scrollHeight - prevHeight;
       el.messages.scrollTop = prevTop + (grown > 0 ? grown : 0);
     }
+  }
+
+  var REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "🎉", "😮"];
+
+  function myRights() {
+    return (state.me && Array.isArray(state.me.rights)) ? state.me.rights : [];
+  }
+
+  function canModerateNow() {
+    if (state.me && (state.me.owner || state.me.admin)) return true;
+    return myRights().indexOf("moderator") >= 0;
+  }
+
+  function replaceMessage(msg) {
+    if (!msg) return;
+    for (var i = 0; i < state.messages.length; i++) {
+      if (state.messages[i].id === msg.id) { state.messages[i] = msg; return; }
+    }
+    state.messages.push(msg);
+  }
+
+  function replyQuoteNode(quote) {
+    var q = mkNode("div", "msg-quote");
+    q.appendChild(mkNode("b", "", displayOf(quote.from)));
+    q.appendChild(mkNode("span", "", quote.text || (quote.img ? "фото" : "")));
+    return q;
+  }
+
+  function reactionsRow(m) {
+    var row = mkNode("div", "msg-reacts");
+    var keys = Object.keys(m.reacts || {});
+    for (var i = 0; i < keys.length; i++) {
+      (function (emoji) {
+        var list = (m.reacts[emoji] || []).slice();
+        if (!list.length) return;
+        var mine = list.some(function (n) { return String(n).toLowerCase() === String(state.nick).toLowerCase(); });
+        var chip = mkNode("button", "react-chip" + (mine ? " mine" : ""), emoji + " " + list.length);
+        chip.type = "button";
+        chip.title = list.join(", ");
+        chip.onclick = function (ev) { ev.stopPropagation(); toggleReaction(m.id, emoji); };
+        row.appendChild(chip);
+      })(keys[i]);
+    }
+    return row;
+  }
+
+  function toggleReaction(id, emoji) {
+    api("reaction", { token: state.token, id: id, emoji: emoji }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "реакция не прошла"); return; }
+      replaceMessage(res.message);
+      renderMessages();
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function closeAllMsgMenus() {
+    var open = document.querySelectorAll(".msg-menu.open, .msg-tools.open");
+    for (var i = 0; i < open.length; i++) open[i].classList.remove("open");
+  }
+
+  function messageTools(m) {
+    var tools = mkNode("div", "msg-tools");
+    for (var i = 0; i < REACTION_EMOJIS.length; i++) {
+      (function (emoji) {
+        var b = mkNode("button", "", emoji);
+        b.type = "button";
+        b.title = "реакция " + emoji;
+        b.onclick = function (ev) { ev.stopPropagation(); toggleReaction(m.id, emoji); };
+        tools.appendChild(b);
+      })(REACTION_EMOJIS[i]);
+    }
+    var reply = mkNode("button", "", "↩");
+    reply.type = "button";
+    reply.title = "ответить";
+    reply.onclick = function (ev) { ev.stopPropagation(); setReplyTo(m); };
+    tools.appendChild(reply);
+
+    var dots = mkNode("button", "dots", "⋯");
+    dots.type = "button";
+    dots.title = "ещё";
+    var menu = mkNode("div", "msg-menu");
+    if (isMine(m)) {
+      var ed = mkNode("button", "", "Изменить");
+      ed.type = "button";
+      ed.onclick = function (ev) { ev.stopPropagation(); openEditMessage(m); };
+      menu.appendChild(ed);
+    }
+    if (isMine(m) || canModerateNow()) {
+      var del = mkNode("button", "danger", "Удалить");
+      del.type = "button";
+      del.onclick = function (ev) { ev.stopPropagation(); deleteMessage(m); };
+      menu.appendChild(del);
+    }
+    dots.onclick = function (ev) {
+      ev.stopPropagation();
+      var wasOpen = menu.classList.contains("open");
+      closeAllMsgMenus();
+      if (!wasOpen) {
+        menu.classList.add("open");
+        tools.classList.add("open");
+      }
+    };
+    tools.appendChild(dots);
+    tools.appendChild(menu);
+    return tools;
+  }
+
+  function setReplyTo(m) {
+    if (!m) return;
+    state.reply = { id: m.id, from: m.from, text: m.text || (m.img ? "фото" : "") };
+    if ($("replyText")) $("replyText").textContent = displayOf(m.from) + ": " + state.reply.text;
+    if ($("replyBar")) $("replyBar").classList.remove("hidden");
+    if (el.text) el.text.focus();
+  }
+
+  function clearReply() {
+    state.reply = null;
+    if ($("replyBar")) $("replyBar").classList.add("hidden");
+    if ($("replyText")) $("replyText").textContent = "";
+  }
+
+  function openEditMessage(m) {
+    state.editing = m.id;
+    if ($("editText")) $("editText").value = m.text || "";
+    if ($("editErr")) $("editErr").textContent = "";
+    if ($("editSheet")) $("editSheet").classList.remove("hidden");
+    if ($("editText")) $("editText").focus();
+  }
+
+  function closeEditMessage() {
+    state.editing = 0;
+    if ($("editSheet")) $("editSheet").classList.add("hidden");
+  }
+
+  function saveEditMessage() {
+    var id = state.editing;
+    if (!id) return;
+    var text = $("editText").value.trim();
+    if (!text) { $("editErr").textContent = "текст не может быть пустым"; return; }
+    api("message-edit", { token: state.token, id: id, text: text }).then(function (res) {
+      if (!res || !res.ok) { $("editErr").textContent = (res && res.error) || "не получилось"; return; }
+      replaceMessage(res.message);
+      closeEditMessage();
+      renderMessages();
+      toast("сообщение изменено");
+    }).catch(function () { $("editErr").textContent = "нет связи"; });
+  }
+
+  function deleteMessage(m) {
+    if (!window.confirm("Удалить это сообщение?")) return;
+    api("message-delete", { token: state.token, id: m.id }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "не удалилось"); return; }
+      state.messages = state.messages.filter(function (x) { return x.id !== m.id; });
+      renderMessages();
+      renderChatList();
+      toast("сообщение удалено");
+    }).catch(function () { toast("нет связи"); });
+  }
+
+  function loadNotes() {
+    if (!state.token) return;
+    api("notes", { token: state.token }).then(function (res) {
+      if (res && res.ok) state.notes = res.notes || {};
+    }).catch(function () { });
+  }
+
+  function saveNote(nick, text) {
+    api("note-save", { token: state.token, nick: nick, text: String(text || "").trim() }).then(function (res) {
+      if (!res || !res.ok) { toast((res && res.error) || "заметка не сохранилась"); return; }
+      state.notes = res.notes || {};
+      toast("заметка сохранена");
+    }).catch(function () { toast("нет связи"); });
   }
 
   function setTab(tab) {
@@ -1740,12 +2102,15 @@
     var request = { token: state.token, to: state.chat };
     if (payload && payload.text) request.text = payload.text;
     if (payload && payload.img) request.img = payload.img;
+    if (state.reply && state.reply.id) request.replyId = state.reply.id;
     return api("send", request).then(function (res) {
       if (!res || !res.ok) {
         toast((res && res.error) || "не отправилось");
         return res;
       }
+      clearReply();
       if (res.message && addMessages([res.message])) {
+        if (res.botMessage) addMessages([res.botMessage]);
         renderMessages();
         renderChatList();
         updateTitle();
@@ -1956,6 +2321,7 @@
     blocked: "Чёрный список",
     folders: "Папки",
     moderation: "Модерация",
+    bots: "Боты",
     media: "Медиа",
     data: "Данные и память",
     sessions: "Сессии",
@@ -1983,6 +2349,7 @@
     if (pane === "security" || pane === "blocked") syncBlockedUi();
     if (pane === "folders") syncFoldersUi();
     if (pane === "moderation") syncModerationUi();
+    if (pane === "bots") syncBotsUi();
     if (pane === "media") syncMediaUi();
     if (pane === "data") syncDataUi();
     if (pane === "sessions") loadSessions();
@@ -2089,6 +2456,53 @@
     if (cls) n.className = cls;
     if (text !== undefined && text !== null) n.textContent = text;
     return n;
+  }
+
+  function sealPath(cx, cy, spikes, outer, inner) {
+    var step = Math.PI / spikes;
+    var pts = [];
+    for (var i = 0; i < spikes * 2; i++) {
+      var r = i % 2 === 0 ? outer : inner;
+      var a = i * step - Math.PI / 2;
+      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+    }
+    var d = "M" + pts[0][0].toFixed(2) + " " + pts[0][1].toFixed(2);
+    for (var j = 1; j < pts.length; j++) {
+      var prev = pts[j - 1];
+      var cur = pts[j];
+      var mx = (prev[0] + cur[0]) / 2;
+      var my = (prev[1] + cur[1]) / 2;
+      d += " Q" + mx.toFixed(2) + " " + my.toFixed(2) + " " + cur[0].toFixed(2) + " " + cur[1].toFixed(2);
+    }
+    return d + " Z";
+  }
+
+  function verifBadge(size) {
+    var ns = "http://www.w3.org/2000/svg";
+    var s = size || 16;
+    var span = document.createElement("span");
+    span.className = "verif";
+    span.title = "канал верифицирован";
+    span.setAttribute("aria-label", "канал верифицирован");
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", s);
+    svg.setAttribute("height", s);
+    svg.setAttribute("aria-hidden", "true");
+    var seal = document.createElementNS(ns, "path");
+    seal.setAttribute("d", sealPath(12, 12, 12, 11.6, 9.5));
+    seal.setAttribute("fill", "#2f4f95");
+    var tick = document.createElementNS(ns, "path");
+    tick.setAttribute("d", "M7.4 12.5 L10.5 15.5 L16.8 9.1");
+    tick.setAttribute("fill", "none");
+    tick.setAttribute("stroke", "#ffffff");
+    tick.setAttribute("stroke-width", "2.5");
+    tick.setAttribute("stroke-linecap", "round");
+    tick.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(seal);
+    svg.appendChild(tick);
+    span.appendChild(svg);
+    return span;
   }
 
   function infoRow(label, value) {
@@ -2214,6 +2628,54 @@
     rows.appendChild(infoRow("телефон", u.phone ? formatPhone(u.phone) : "скрыт настройками"));
     rows.appendChild(infoRow("аватар", u.photo ? "фото профиля" : "цвет " + (u.avatar || 1)));
     body.appendChild(rows);
+
+    var noteBlock = mkNode("div", "info-rows");
+    noteBlock.appendChild(mkNode("div", "group-title", "Заметка"));
+    var noteInput = document.createElement("textarea");
+    noteInput.className = "info-note";
+    noteInput.maxLength = 500;
+    noteInput.placeholder = "Только для тебя: о чём помнить";
+    noteInput.value = (state.notes && state.notes[String(u.nick).toLowerCase()]) || "";
+    noteBlock.appendChild(noteInput);
+    var noteBtn = mkNode("button", "btn primary small", "Сохранить заметку");
+    noteBtn.type = "button";
+    noteBtn.onclick = function () { saveNote(u.nick, noteInput.value); };
+    noteBlock.appendChild(noteBtn);
+    body.appendChild(noteBlock);
+
+    if (state.me && (state.me.owner || state.me.admin) && !u.owner) {
+      var rightsBlock = mkNode("div", "info-rows");
+      rightsBlock.appendChild(mkNode("div", "group-title", "Права"));
+      rightsBlock.appendChild(mkNode("div", "hint", "Выдай права — и человек сможет делать больше."));
+      var box = mkNode("div", "info-rights");
+      var rightLabels = {
+        moderator: "Модератор — баны и удаление чужих сообщений",
+        verifier: "Проверяющий — верификация каналов",
+        botmaster: "Бот-мастер — создание ботов"
+      };
+      Object.keys(rightLabels).forEach(function (key) {
+        var line = mkNode("label", "right-line");
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.setAttribute("data-right", key);
+        cb.checked = (u.rights || []).indexOf(key) >= 0;
+        cb.onchange = function () {
+          var picked = [];
+          var all = box.querySelectorAll("input[data-right]");
+          for (var i = 0; i < all.length; i++) if (all[i].checked) picked.push(all[i].getAttribute("data-right"));
+          api("rights", { token: state.token, nick: u.nick, rights: picked }).then(function (res) {
+            if (!res || !res.ok) { toast((res && res.error) || "права не сохранились"); return; }
+            if (u) u.rights = res.rights || [];
+            toast("права обновлены");
+          }).catch(function () { toast("нет связи"); });
+        };
+        line.appendChild(cb);
+        line.appendChild(mkNode("span", "", rightLabels[key]));
+        box.appendChild(line);
+      });
+      rightsBlock.appendChild(box);
+      body.appendChild(rightsBlock);
+    }
   }
 
   function chatPhotoInput(kind, id) {
@@ -2264,12 +2726,7 @@
     hero.appendChild(av);
     var head = mkNode("div", "info-head");
     var name = mkNode("div", "info-name", ch.title);
-    if (ch.verified) {
-      var badge = mkNode("span", "verif", "✓");
-      badge.title = "канал верифицирован";
-      badge.setAttribute("aria-label", "канал верифицирован");
-      name.appendChild(badge);
-    }
+    if (ch.verified) name.appendChild(verifBadge(20));
     head.appendChild(name);
     head.appendChild(mkNode("div", "info-nick", "канал · " + ch.members + " участн."));
     head.appendChild(mkNode("div", "info-state", ch.mine ? "твой канал" : ch.joined ? "ты подписан" : "не подписан"));
@@ -2967,6 +3424,15 @@
     el.newSheet.addEventListener("click", function (e) { if (e.target === el.newSheet) closeNewSheet(); });
     if ($("btnInfoClose")) $("btnInfoClose").addEventListener("click", closeInfo);
     if (el.infoSheet) el.infoSheet.addEventListener("click", function (e) { if (e.target === el.infoSheet) closeInfo(); });
+    if ($("replyCancel")) $("replyCancel").addEventListener("click", clearReply);
+    if ($("btnAddRule")) $("btnAddRule").addEventListener("click", function () { addBotRuleRow("", ""); });
+    if ($("btnBotSave")) $("btnBotSave").addEventListener("click", saveBot);
+    if ($("btnBotReset")) $("btnBotReset").addEventListener("click", resetBotForm);
+    if ($("btnEditClose")) $("btnEditClose").addEventListener("click", closeEditMessage);
+    if ($("btnEditCancel")) $("btnEditCancel").addEventListener("click", closeEditMessage);
+    if ($("btnEditSave")) $("btnEditSave").addEventListener("click", saveEditMessage);
+    if ($("editSheet")) $("editSheet").addEventListener("click", function (e) { if (e.target === $("editSheet")) closeEditMessage(); });
+    document.addEventListener("click", function () { closeAllMsgMenus(); });
     if (el.chatAvatar) {
       el.chatAvatar.classList.add("clickable");
       el.chatAvatar.title = "открыть карточку";
