@@ -448,6 +448,10 @@ input:disabled { opacity: .6; cursor: not-allowed; }
 .msg-text { white-space: pre-wrap; }
 .msg-body .msg-img + .msg-text { margin-top: 6px; }
 .composer input { flex: 1; }
+.composer-note {
+  padding: 14px 18px 16px; border-top: 1px solid var(--line); background: var(--panel);
+  font-size: .82rem; color: var(--muted); text-align: center; font-style: italic;
+}
 .send { width: 44px; height: 42px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
 
 .overlay {
@@ -811,6 +815,12 @@ html[data-theme="dark"] input[type="range"]::-moz-range-track { background: rgba
 .info-bio.quiet { color: var(--muted); font-style: italic; }
 .info-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 0; border-bottom: 1px dashed var(--line); }
 .info-rows { padding: 6px 0 14px; }
+.admin-list { display: flex; flex-direction: column; padding: 4px 0 8px; }
+.admin-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+.admin-line:last-child { border-bottom: 0; }
+.admin-nick { font-size: .9rem; }
+.admin-add { display: flex; gap: 8px; align-items: center; }
+.admin-add input { flex: 1; min-width: 0; }
 .info-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: .88rem; }
 .info-row:last-child { border-bottom: 0; }
 .info-row span { color: var(--muted); }
