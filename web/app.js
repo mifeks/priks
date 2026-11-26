@@ -1098,6 +1098,29 @@
     });
   }
 
+  function saveRightsFromPane() {
+    var nickInput = $("rights-nick");
+    var err = $("rights-err");
+    var box = $("rights-box");
+    if (!nickInput || !box) return;
+    if (err) err.textContent = "";
+    var nick = nickInput.value.trim().replace(/^@+/, "").toLowerCase();
+    if (!nick) { if (err) err.textContent = "введи ник"; return; }
+    var picked = [];
+    var all = box.querySelectorAll("input[data-right]");
+    for (var i = 0; i < all.length; i++) if (all[i].checked) picked.push(all[i].getAttribute("data-right"));
+    if (!picked.length) { if (err) err.textContent = "отметь хотя бы одно право"; return; }
+    api("rights", { token: state.token, nick: nick, rights: picked }).then(function (res) {
+      if (!res || !res.ok) { if (err) err.textContent = (res && res.error) || "не получилось"; return; }
+      var names = (res.rights || []).map(function (r) {
+        return r === "moderator" ? "модератор" : (r === "verifier" ? "проверяющий" : (r === "botmaster" ? "бот-мастер" : r));
+      });
+      toast("@" + nick + ": " + (names.length ? names.join(", ") : "права сняты"));
+      for (var j = 0; j < all.length; j++) all[j].checked = false;
+      nickInput.value = "";
+    }).catch(function () { if (err) err.textContent = "нет связи"; });
+  }
+
   function verifyChannel(id, verified) {
     api("channel-verify", { token: state.token, id: id, verified: verified }).then(function (res) {
       if (!res || !res.ok) { toast((res && res.error) || "не получилось"); return; }
@@ -1822,6 +1845,7 @@
         })(m.from);
       }
       head.appendChild(meta);
+      head.appendChild(messageTools(m));
       wrap.appendChild(head);
 
       if (m.replyTo) wrap.appendChild(replyQuoteNode(m.replyTo));
@@ -1869,8 +1893,6 @@
         time.appendChild(mark);
       }
       wrap.appendChild(time);
-
-      wrap.appendChild(messageTools(m));
 
       el.messages.appendChild(wrap);
     }
@@ -3428,6 +3450,7 @@
     if ($("btnAddRule")) $("btnAddRule").addEventListener("click", function () { addBotRuleRow("", ""); });
     if ($("btnBotSave")) $("btnBotSave").addEventListener("click", saveBot);
     if ($("btnBotReset")) $("btnBotReset").addEventListener("click", resetBotForm);
+    if ($("btnSaveRights")) $("btnSaveRights").addEventListener("click", saveRightsFromPane);
     if ($("btnEditClose")) $("btnEditClose").addEventListener("click", closeEditMessage);
     if ($("btnEditCancel")) $("btnEditCancel").addEventListener("click", closeEditMessage);
     if ($("btnEditSave")) $("btnEditSave").addEventListener("click", saveEditMessage);
