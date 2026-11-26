@@ -427,7 +427,19 @@ input:disabled { opacity: .6; cursor: not-allowed; }
 }
 .msg-head .msg-meta { margin: 0; padding: 0; }
 
-.composer { display: flex; gap: 10px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+.composer { display: flex; gap: 10px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--panel); position: relative; }
+.emoji-btn { flex: 0 0 auto; align-self: center; }
+.emoji-panel {
+  position: absolute; bottom: calc(100% + 8px); left: 14px; width: min(324px, calc(100% - 28px));
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.18); z-index: 40;
+}
+.emoji-panel button {
+  border: 0; background: transparent; font-size: 1.12rem; line-height: 1;
+  padding: 5px 0; border-radius: 8px; cursor: pointer;
+}
+.emoji-panel button:hover { background: var(--panel2); }
 .photo-btn { flex: 0 0 auto; align-self: center; }
 .msg-img {
   display: block; max-width: 300px; max-height: 340px; border-radius: 12px;
